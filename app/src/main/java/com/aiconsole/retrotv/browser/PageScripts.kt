@@ -85,19 +85,24 @@ object PageScripts {
   try { w = +RetroTVView.width(location.hostname); } catch (e) {}
   if (!w) return;
   var want = 'width=' + w;
-  function apply() {
+  function apply(force) {
     var head = document.head || document.documentElement;
     if (!head) return;
     var all = document.querySelectorAll('meta[name="viewport" i]');
     var m = all[0];
     for (var i = 1; i < all.length; i++) all[i].remove();
     if (!m) { m = document.createElement('meta'); m.name = 'viewport'; head.appendChild(m); }
+    // A change made while the page is still starting up can be dropped: force it again later.
+    if (force && m.content === want) m.content = want + ',';
     if (m.content !== want) m.content = want;
   }
   apply();
-  var mo = new MutationObserver(apply);
-  mo.observe(document.documentElement, { childList: true, subtree: true });
-  addEventListener('load', function () { setTimeout(function () { mo.disconnect(); apply(); }, 3000); });
+  function again() { apply(true); }
+  document.addEventListener('DOMContentLoaded', again);
+  addEventListener('load', function () { again(); setTimeout(again, 1500); setTimeout(again, 4000); });
+  // The document (documentElement may not exist yet at document start). Frameworks (Next.js,
+  // React Helmet) put their own value back after hydrating, so keep watching.
+  new MutationObserver(function () { apply(false); }).observe(document, { childList: true, subtree: true, attributes: true, attributeFilter: ['content', 'name'] });
 })();
 """
 
