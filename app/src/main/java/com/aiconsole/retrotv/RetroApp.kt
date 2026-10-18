@@ -6,6 +6,8 @@ import com.aiconsole.retrotv.data.History
 import com.aiconsole.retrotv.data.Settings
 import com.aiconsole.retrotv.data.SiteStore
 import com.aiconsole.retrotv.downloads.Downloads
+import com.aiconsole.retrotv.player.GameFiles
+import com.aiconsole.retrotv.player.GameLibrary
 import com.aiconsole.retrotv.web.AdBlock
 import com.aiconsole.retrotv.web.UserscriptStore
 
@@ -17,6 +19,8 @@ class RetroApp : Application() {
     val history by lazy { History(this) }
     val userscripts by lazy { UserscriptStore(this) }
     val downloads by lazy { Downloads(this) }
+    val games by lazy { GameFiles(this) }
+    val library by lazy { GameLibrary(this) }
 
     override fun onCreate() {
         super.onCreate()

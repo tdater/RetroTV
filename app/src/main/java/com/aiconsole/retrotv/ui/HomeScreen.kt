@@ -64,6 +64,9 @@ fun HomeScreen(onNavigate: (Screen) -> Unit, onOpen: (Site) -> Unit, onOpenUrl: 
     val prefs by app.settings.state.collectAsState()
     val custom by app.sites.custom.collectAsState()
     val history by app.history.entries.collectAsState()
+    val games by app.library.recent.collectAsState()
+    var note by remember { mutableStateOf("") }
+    val roms = rememberRomPicker { note = it }
     var filter by rememberSaveable { mutableStateOf(ALL) }
     var menuFor by remember { mutableStateOf<Site?>(null) }
     var dialog by remember { mutableStateOf<String?>(null) } // "go", "add", "rename"
@@ -90,11 +93,19 @@ fun HomeScreen(onNavigate: (Screen) -> Unit, onOpen: (Site) -> Unit, onOpenUrl: 
             modifier = Modifier.fillMaxSize()
         ) {
             item(span = { GridItemSpan(maxLineSpan) }) {
-                Header(prefs.showClock, onNavigate, onGo = { dialog = "go" })
+                Header(prefs.showClock, onNavigate, onGo = { dialog = "go" }, onPlayRom = roms.open)
+            }
+            if (note.isNotEmpty()) {
+                item(span = { GridItemSpan(maxLineSpan) }) { Text(note, color = MaterialTheme.colorScheme.primary, fontSize = 15.sp) }
             }
             item(span = { GridItemSpan(maxLineSpan) }) {
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     items(tags) { t -> TvButton(t, { filter = t }, selected = filter == t) }
+                }
+            }
+            if (games.isNotEmpty() && filter == ALL) {
+                item(span = { GridItemSpan(maxLineSpan) }) {
+                    RecentGamesRow(games) { app.library.remove(it.request.key) }
                 }
             }
             if (history.isNotEmpty() && filter == ALL) {
@@ -143,6 +154,7 @@ fun HomeScreen(onNavigate: (Screen) -> Unit, onOpen: (Site) -> Unit, onOpenUrl: 
             }
         }
 
+        roms.Dialog()
         menuFor?.let { site ->
             BackHandler { menuFor = null }
             SiteMenu(
@@ -182,33 +194,36 @@ fun HomeScreen(onNavigate: (Screen) -> Unit, onOpen: (Site) -> Unit, onOpenUrl: 
 }
 
 @Composable
-private fun Header(showClock: Boolean, onNavigate: (Screen) -> Unit, onGo: () -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-        Column {
-            Row(verticalAlignment = Alignment.Bottom) {
-                Text("RETRO", fontSize = 40.sp, fontWeight = FontWeight.Black, color = Color.White, letterSpacing = 3.sp)
-                Text("TV", fontSize = 40.sp, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.primary, letterSpacing = 3.sp)
-            }
-            Text("Every retro console, no emulators to install", color = TextDim, fontSize = 14.sp)
-        }
-        Spacer(Modifier.weight(1f))
-        if (showClock) {
-            var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
-            LaunchedEffect(Unit) {
-                while (true) {
-                    delay(15_000)
-                    now = System.currentTimeMillis()
+private fun Header(showClock: Boolean, onNavigate: (Screen) -> Unit, onGo: () -> Unit, onPlayRom: () -> Unit) {
+    Column(Modifier.fillMaxWidth().padding(bottom = 6.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Column {
+                Row(verticalAlignment = Alignment.Bottom) {
+                    Text("RETRO", fontSize = 40.sp, fontWeight = FontWeight.Black, color = Color.White, letterSpacing = 3.sp)
+                    Text("TV", fontSize = 40.sp, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.primary, letterSpacing = 3.sp)
                 }
+                Text("Every retro console, no emulators to install", color = TextDim, fontSize = 14.sp)
             }
-            Text(DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(now)), color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Light)
-            Spacer(Modifier.width(20.dp))
+            Spacer(Modifier.weight(1f))
+            if (showClock) {
+                var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+                LaunchedEffect(Unit) {
+                    while (true) {
+                        delay(15_000)
+                        now = System.currentTimeMillis()
+                    }
+                }
+                Text(DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(now)), color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Light)
+            }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            TvButton("Go to", onGo, icon = "🔍")
-            TvButton("Emulators & downloads", { onNavigate(Screen.Downloads) }, icon = "⬇")
-            TvButton("Scripts", { onNavigate(Screen.Scripts) }, icon = "📜")
-            TvButton("History", { onNavigate(Screen.History) }, icon = "🕘")
-            TvButton("Settings", { onNavigate(Screen.Settings) }, icon = "⚙")
+        // Their own row: next to the logo and clock they ran out of room on a TV and were cut off.
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            item { TvButton("Go to a site", onGo, icon = "🔍") }
+            item { TvButton("Play a ROM file", onPlayRom, icon = "🎮") }
+            item { TvButton("Emulators & downloads", { onNavigate(Screen.Downloads) }, icon = "⬇") }
+            item { TvButton("Scripts", { onNavigate(Screen.Scripts) }, icon = "📜") }
+            item { TvButton("History", { onNavigate(Screen.History) }, icon = "🕘") }
+            item { TvButton("Settings", { onNavigate(Screen.Settings) }, icon = "⚙") }
         }
     }
 }
@@ -278,7 +293,7 @@ private fun SiteMenu(site: Site, onClose: () -> Unit, onOpen: () -> Unit, onRena
     val sp = remember(siteVersion, host) { app.settings.site(host) }
     LaunchedEffect(Unit) { runCatching { first.requestFocus() } }
 
-    OverlayPanel(site.name, Modifier.fillMaxSize(), widthFraction = 0.62f) {
+    OverlayPanel(site.name, Modifier.fillMaxSize(), widthFraction = 0.8f) {
         Text(site.url, color = TextDim, fontSize = 14.sp)
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             TvButton("Play", onOpen, Modifier.weight(1f).focusRequester(first), icon = "▶")
@@ -321,6 +336,11 @@ private fun SiteMenu(site: Site, onClose: () -> Unit, onOpen: () -> Unit, onRena
             "Ad blocking", listOf<Boolean?>(null, true, false), sp.adBlock,
             { when (it) { null -> "Default"; true -> "On"; false -> "Off for this site" } },
             { v -> app.settings.updateSite(host) { it.copy(adBlock = v) } }
+        )
+        ChoiceRow(
+            "Game player", listOf<Boolean?>(null, true, false), sp.player,
+            { when (it) { null -> "Default (${if (prefs.builtInPlayer) "RetroTV" else "site's own"})"; true -> "RetroTV player"; false -> "Site's own player" } },
+            { v -> app.settings.updateSite(host) { it.copy(player = v) } }
         )
         ChoiceRow(
             "Controller", listOf<ControllerMode?>(null) + ControllerMode.entries, sp.controllerMode,

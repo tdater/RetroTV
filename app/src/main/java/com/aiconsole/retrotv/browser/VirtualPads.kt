@@ -2,6 +2,7 @@ package com.aiconsole.retrotv.browser
 
 import android.view.InputDevice
 import android.view.KeyEvent
+import android.os.SystemClock
 import android.view.MotionEvent
 import android.webkit.JavascriptInterface
 import com.aiconsole.retrotv.web.Gamepad
@@ -15,7 +16,7 @@ import kotlin.math.abs
  */
 class VirtualPads {
 
-    private class Pad(val name: String) {
+    private class Pad(val name: String, val remote: Boolean = false) {
         val buttons = FloatArray(17)
         val axes = FloatArray(4)
         var timestamp = 0L
@@ -26,15 +27,54 @@ class VirtualPads {
     private val slots = HashMap<Int, Int>() // deviceId -> slot
     private val hat = HashMap<Int, Pair<Float, Float>>()
 
-    private fun pad(device: InputDevice?): Pad? {
+    /** When a page last read the pads (any frame). */
+    @Volatile
+    private var lastPollAt = 0L
+
+    /** True while the page is reading gamepads, i.e. it's a gamepad-aware emulator. */
+    val pagePolls: Boolean get() = lastPollAt != 0L && SystemClock.uptimeMillis() - lastPollAt < 2500
+
+    private fun pad(device: InputDevice?, remote: Boolean = false): Pad? {
         val id = device?.id ?: return null
         synchronized(lock) {
-            val slot = slots[id] ?: (0 until 4).firstOrNull { s -> pads[s] == null }?.also { s ->
-                slots[id] = s
-                pads[s] = Pad(device.name ?: "Controller")
-            } ?: return null
+            slots[id]?.let { return pads[it] }
+            // A real controller takes over from the remote standing in as player 1.
+            if (!remote) slots.entries.firstOrNull { pads[it.value]?.remote == true }?.let { e ->
+                pads[e.value] = null
+                slots.remove(e.key)
+            }
+            val slot = (0 until 4).firstOrNull { s -> pads[s] == null } ?: return null
+            slots[id] = slot
+            pads[slot] = Pad(if (remote) "TV remote" else device.name ?: "Controller", remote)
             return pads[slot]
         }
+    }
+
+    private fun hasController(): Boolean = synchronized(lock) { pads.any { it != null && !it.remote } }
+
+    /**
+     * The TV remote as player 1 while no controller is connected (built-in player): D-pad, OK = A,
+     * Play/Pause = Start, Rewind = B, Fast-forward = X. Returns false for other keys.
+     */
+    fun onRemoteKey(event: KeyEvent): Boolean {
+        val i = when (event.keyCode) {
+            KeyEvent.KEYCODE_DPAD_UP -> 12
+            KeyEvent.KEYCODE_DPAD_DOWN -> 13
+            KeyEvent.KEYCODE_DPAD_LEFT -> 14
+            KeyEvent.KEYCODE_DPAD_RIGHT -> 15
+            KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER -> 0
+            KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_MEDIA_PLAY, KeyEvent.KEYCODE_MEDIA_PAUSE -> 9
+            KeyEvent.KEYCODE_MEDIA_REWIND -> 1
+            KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> 2
+            else -> return false
+        }
+        if (hasController()) return false
+        val p = pad(event.device, remote = true) ?: return false
+        synchronized(lock) {
+            p.buttons[i] = if (event.action == KeyEvent.ACTION_DOWN) 1f else 0f
+            p.timestamp = System.nanoTime()
+        }
+        return true
     }
 
     /** Standard-mapping button index for an Android key code, or -1. */
@@ -115,13 +155,20 @@ class VirtualPads {
         hat.remove(deviceId)
     }
 
-    val connectedCount: Int get() = synchronized(lock) { pads.count { it != null } }
+    val connectedCount: Int get() = synchronized(lock) { pads.count { it != null && !it.remote } }
 
     /** JS bridge object, registered as `RetroTVPad`. */
     inner class Bridge {
         /** `slot~name~ts~b0,b1,..~a0,a1,a2,a3` for each pad, joined by `|`. */
         @JavascriptInterface
-        fun state(): String = synchronized(lock) {
+        fun state(): String {
+            lastPollAt = SystemClock.uptimeMillis()
+            return peek()
+        }
+
+        /** Same as [state] without counting as the page reading pads (connect/disconnect events). */
+        @JavascriptInterface
+        fun peek(): String = synchronized(lock) {
             buildString {
                 pads.forEachIndexed { slot, p ->
                     if (p == null) return@forEachIndexed
@@ -164,11 +211,11 @@ class VirtualPads {
       vibrationActuator: null, hapticActuators: []
     };
   }
-  function read() {
+  function read(peek) {
     var now = performance.now();
     if (cache && now - cacheAt < 4) return cache;
     var out = [null, null, null, null], s = '';
-    try { s = RetroTVPad.state(); } catch (e) {}
+    try { s = peek ? RetroTVPad.peek() : RetroTVPad.state(); } catch (e) {}
     if (s) s.split('|').forEach(function (p) {
       var f = p.split('~'); var slot = +f[0];
       out[slot] = makePad(slot, f[1], +f[2], f[3].split(','), f[4].split(','));
@@ -184,7 +231,7 @@ class VirtualPads {
     window.dispatchEvent(ev);
   }
   setInterval(function () {
-    var pads = read();
+    var pads = read(true);
     for (var i = 0; i < 4; i++) {
       if (pads[i] && !known[i]) { known[i] = true; fire('gamepadconnected', pads[i]); }
       else if (!pads[i] && known[i]) { known[i] = false; fire('gamepaddisconnected', { index: i, connected: false }); }

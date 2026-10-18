@@ -1,9 +1,14 @@
 package com.aiconsole.retrotv
 
+import com.aiconsole.retrotv.data.ControllerMode
+import com.aiconsole.retrotv.data.Prefs
 import com.aiconsole.retrotv.data.UrlInput
+import com.aiconsole.retrotv.data.ViewMode
+import com.aiconsole.retrotv.player.Systems
 import com.aiconsole.retrotv.downloads.Emulators
 import com.aiconsole.retrotv.web.AdBlock
 import com.aiconsole.retrotv.web.Gamepad
+import com.aiconsole.retrotv.web.Surrogates
 import com.aiconsole.retrotv.web.UserAgents
 import com.aiconsole.retrotv.web.Userscripts
 import org.junit.Assert.assertEquals
@@ -193,5 +198,73 @@ class UserAgentsTest {
         assertFalse(ua.contains("; wv"))
         assertFalse(ua.contains("Version/4.0"))
         assertTrue(ua.contains("Chrome/131"))
+    }
+}
+
+class SystemsTest {
+
+    @Test
+    fun systemsFromCoreNamesAndIds() {
+        assertEquals("Genesis / Mega Drive", Systems.label("segaMD"))
+        assertEquals("Genesis / Mega Drive", Systems.label("genesis_plus_gx"))
+        assertEquals("NES / Famicom", Systems.label("fceumm"))
+        assertEquals("unknowncore", Systems.label("unknowncore"))
+        assertTrue(Systems.needsThreads("psp"))
+        assertTrue(Systems.needsThreads("dosbox_pure"))
+        assertFalse(Systems.needsThreads("gba"))
+    }
+
+    @Test
+    fun ownRomFiles() {
+        assertEquals("segaMD", Systems.forFile("Sonic The Hedgehog (USA).md")?.id)
+        assertEquals("snes", Systems.forFile("/x/Super Metroid.SFC")?.id)
+        assertEquals("gba", Systems.forFile("pokemon.gba")?.id)
+        assertNull(Systems.forFile("arcade-game.zip"))
+        assertNull(Systems.forFile("disc.chd"))
+        assertNull(Systems.forFile("readme"))
+        assertTrue(Systems.isRom("game.zip"))
+        assertTrue(Systems.isRom("game.nes"))
+        assertFalse(Systems.isRom("RetroArch.apk"))
+        // Every extension belongs to one system only.
+        val all = Systems.ALL.flatMap { it.extensions }
+        assertEquals(all.size, all.toSet().size)
+    }
+}
+
+class SurrogatesTest {
+
+    @Test
+    fun adLibrariesGetStandIns() {
+        assertNotNull(Surrogates.find("pagead2.googlesyndication.com", "/pagead/js/adsbygoogle.js"))
+        assertNotNull(Surrogates.find("www.googletagmanager.com", "/gtag/js"))
+        assertNotNull(Surrogates.find("www.google-analytics.com", "/analytics.js"))
+        assertNotNull(Surrogates.find("securepubads.g.doubleclick.net", "/tag/js/gpt.js"))
+        assertNotNull(Surrogates.find("api.adinplay.com", "/libs/aiptag/pub/CCG/playclassic.games/tag.min.js"))
+        assertNull(Surrogates.find("popads.net", "/pop.js"))
+    }
+
+    @Test
+    fun scriptsAreRecognised() {
+        assertTrue(Surrogates.looksLikeScript("/pop.js", null))
+        assertTrue(Surrogates.looksLikeScript("/x/tag.min.js?v=2", null))
+        assertFalse(Surrogates.looksLikeScript("/pixel.gif", "image/webp,*/*"))
+    }
+
+    @Test
+    fun standInsKeepTheApi() {
+        val ads = Surrogates.find("pagead2.googlesyndication.com", "/pagead/js/adsbygoogle.js")!!
+        assertTrue(ads.contains("adBreakDone"))
+        val aip = Surrogates.find("api.adinplay.com", "/tag.min.js")!!
+        assertTrue(aip.contains("AIP_COMPLETE"))
+    }
+}
+
+class PrefsDefaultsTest {
+
+    @Test
+    fun newDefaults() {
+        assertEquals(ControllerMode.Auto, Prefs().controllerMode)
+        assertTrue(Prefs().builtInPlayer)
+        assertTrue(ViewMode.Desktop.viewportWidth > ViewMode.Mobile.viewportWidth)
     }
 }

@@ -32,7 +32,7 @@ object AdBlock {
         "ad-score.com", "dolohen.com", "highperformanceformat.com", "highcpmgate.com", "profitablegatecpm.com",
         "effectiveratecpm.com", "displaycontentnetwork.com", "realsrv.com", "pemsrv.com", "mnaspm.com",
         "notifpush.com", "pushnami.com", "pushwoosh.com", "pushengage.com", "izooto.com", "aclib.net",
-        "acscdn.com",
+        "acscdn.com", "grop.net", "wingsmob.com", "intergient.com", "cpmstar.com",
         // Trackers and analytics
         "google-analytics.com", "googletagmanager.com", "scorecardresearch.com", "quantserve.com",
         "quantcount.com", "hotjar.com", "mixpanel.com", "segment.io", "branch.io", "chartbeat.com",

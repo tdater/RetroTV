@@ -73,6 +73,34 @@ object PageScripts {
 """
 
     /** Exits any HTML5 full screen the page entered. */
+    /**
+     * Desktop / TV view: sets the top page's layout width (`RetroTVView.width(host)`), so the
+     * difference is visible on a TV, whose screen is already "desktop" sized for most sites.
+     */
+    const val VIEWPORT = """
+(function () {
+  if (window.top !== window || window.__retrotvView || typeof RetroTVView === 'undefined') return;
+  window.__retrotvView = true;
+  var w = 0;
+  try { w = +RetroTVView.width(location.hostname); } catch (e) {}
+  if (!w) return;
+  var want = 'width=' + w;
+  function apply() {
+    var head = document.head || document.documentElement;
+    if (!head) return;
+    var all = document.querySelectorAll('meta[name="viewport" i]');
+    var m = all[0];
+    for (var i = 1; i < all.length; i++) all[i].remove();
+    if (!m) { m = document.createElement('meta'); m.name = 'viewport'; head.appendChild(m); }
+    if (m.content !== want) m.content = want;
+  }
+  apply();
+  var mo = new MutationObserver(apply);
+  mo.observe(document.documentElement, { childList: true, subtree: true });
+  addEventListener('load', function () { setTimeout(function () { mo.disconnect(); apply(); }, 3000); });
+})();
+"""
+
     const val EXIT_FULLSCREEN = "try{document.fullscreenElement&&document.exitFullscreen()}catch(e){}"
 
     /** Reads a blob: URL in the page and hands it to the native side for saving. */

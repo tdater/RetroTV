@@ -9,10 +9,12 @@ import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONArray
 import org.json.JSONObject
 
-enum class ControllerMode(val label: String) { Native("Gamepad API"), Keyboard("Keyboard keys"), Both("Gamepad + keyboard") }
+/** Auto: a gamepad while the page reads gamepads (emulators), otherwise keyboard keys ("press any key" screens). */
+enum class ControllerMode(val label: String) { Auto("Auto"), Native("Gamepad API"), Keyboard("Keyboard keys"), Both("Gamepad + keyboard") }
 enum class CardSize(val label: String, val widthDp: Int) { Small("Small", 200), Medium("Medium", 250), Large("Large", 310) }
 enum class Backdrop(val label: String) { Gradient("Gradient"), Dark("Dark"), Black("Black (OLED)"), Arcade("Arcade grid") }
-enum class ViewMode(val label: String) { Mobile("Mobile / TV"), Desktop("Desktop") }
+/** Desktop lays pages out 1280 px wide (more fits); TV / mobile 640 px wide, so everything is bigger. */
+enum class ViewMode(val label: String, val viewportWidth: Int) { Mobile("TV / mobile", 640), Desktop("Desktop", 1280) }
 enum class WindowMode(val label: String) { Windowed("Windowed"), Fullscreen("Full screen") }
 
 /** Accent colours the UI can be themed with. */
@@ -35,7 +37,7 @@ data class Prefs(
     val adBlock: Boolean = true,
     val cosmetic: Boolean = true,
     val blockPopups: Boolean = true,
-    val controllerMode: ControllerMode = ControllerMode.Native,
+    val controllerMode: ControllerMode = ControllerMode.Auto,
     val mapping: Map<Int, Int> = Gamepad.DEFAULT,
     val searchEngine: UrlInput.SearchEngine = UrlInput.SearchEngine.Google,
     val keepScreenOn: Boolean = true,
@@ -47,7 +49,9 @@ data class Prefs(
     val favorites: Set<String> = emptySet(),
     val userscripts: Boolean = true,
     val autoFullscreenGames: Boolean = false,
-    val sandboxApps: Boolean = true
+    val sandboxApps: Boolean = true,
+    /** Games on EmulatorJS sites open in RetroTV's own player. */
+    val builtInPlayer: Boolean = true
 )
 
 /** Overrides one site (by host) can have; null means "use the global setting". */
@@ -55,7 +59,8 @@ data class SitePrefs(
     val viewMode: ViewMode? = null,
     val adBlock: Boolean? = null,
     val controllerMode: ControllerMode? = null,
-    val zoom: Int? = null
+    val zoom: Int? = null,
+    val player: Boolean? = null
 )
 
 class Settings(context: Context) {
@@ -92,7 +97,10 @@ class Settings(context: Context) {
             adBlock = prefs.getBoolean("adBlock", d.adBlock),
             cosmetic = prefs.getBoolean("cosmetic", d.cosmetic),
             blockPopups = prefs.getBoolean("blockPopups", d.blockPopups),
-            controllerMode = enumOf(prefs.getString("controllerMode", null), d.controllerMode),
+            // v1.0 defaulted to the Gamepad API; Auto replaces it once (version 2).
+            controllerMode = enumOf(prefs.getString("controllerMode", null), d.controllerMode).let {
+                if (prefs.getInt("version", 1) < 2 && it == ControllerMode.Native) ControllerMode.Auto else it
+            },
             mapping = Gamepad.decode(prefs.getString("mapping", null)),
             searchEngine = enumOf(prefs.getString("searchEngine", null), d.searchEngine),
             keepScreenOn = prefs.getBoolean("keepScreenOn", d.keepScreenOn),
@@ -104,7 +112,8 @@ class Settings(context: Context) {
             favorites = prefs.getStringSet("favorites", d.favorites).orEmpty().toSet(),
             userscripts = prefs.getBoolean("userscripts", d.userscripts),
             autoFullscreenGames = prefs.getBoolean("autoFullscreenGames", d.autoFullscreenGames),
-            sandboxApps = prefs.getBoolean("sandboxApps", d.sandboxApps)
+            sandboxApps = prefs.getBoolean("sandboxApps", d.sandboxApps),
+            builtInPlayer = prefs.getBoolean("builtInPlayer", d.builtInPlayer)
         )
     }
 
@@ -135,6 +144,8 @@ class Settings(context: Context) {
         putBoolean("userscripts", p.userscripts)
         putBoolean("autoFullscreenGames", p.autoFullscreenGames)
         putBoolean("sandboxApps", p.sandboxApps)
+        putBoolean("builtInPlayer", p.builtInPlayer)
+        putInt("version", 2)
     }
 
     // Per-site overrides, keyed by host.
@@ -151,7 +162,8 @@ class Settings(context: Context) {
                 viewMode = o.optString("viewMode").takeIf { it.isNotEmpty() }?.let { n -> ViewMode.entries.firstOrNull { it.name == n } },
                 adBlock = if (o.has("adBlock")) o.getBoolean("adBlock") else null,
                 controllerMode = o.optString("controllerMode").takeIf { it.isNotEmpty() }?.let { n -> ControllerMode.entries.firstOrNull { it.name == n } },
-                zoom = if (o.has("zoom")) o.getInt("zoom") else null
+                zoom = if (o.has("zoom")) o.getInt("zoom") else null,
+                player = if (o.has("player")) o.getBoolean("player") else null
             )
         }.getOrDefault(SitePrefs())
     }
@@ -164,6 +176,7 @@ class Settings(context: Context) {
         s.adBlock?.let { o.put("adBlock", it) }
         s.controllerMode?.let { o.put("controllerMode", it.name) }
         s.zoom?.let { o.put("zoom", it) }
+        s.player?.let { o.put("player", it) }
         sitePrefs.edit { if (o.length() == 0) remove(host) else putString(host, o.toString()) }
         _siteVersion.value++
     }
@@ -172,6 +185,7 @@ class Settings(context: Context) {
     fun adBlock(host: String) = value.adBlock && (site(host).adBlock ?: true)
     fun controllerMode(host: String) = site(host).controllerMode ?: value.controllerMode
     fun zoom(host: String) = site(host).zoom ?: value.textZoom
+    fun builtInPlayer(host: String) = site(host).player ?: value.builtInPlayer
 
     fun clearSiteOverrides() {
         sitePrefs.edit { clear() }

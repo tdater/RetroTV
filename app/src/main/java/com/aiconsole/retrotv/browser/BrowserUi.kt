@@ -48,6 +48,7 @@ import com.aiconsole.retrotv.ui.OverlayPanel
 import com.aiconsole.retrotv.ui.Pill
 import com.aiconsole.retrotv.ui.ScriptsPanel
 import com.aiconsole.retrotv.ui.TextDim
+import com.aiconsole.retrotv.ui.MenuTile
 import com.aiconsole.retrotv.ui.TvButton
 import com.aiconsole.retrotv.ui.TvTextField
 import com.aiconsole.retrotv.web.Userscript
@@ -80,7 +81,8 @@ class BrowserUiState {
     var controllerBrowse by mutableStateOf(false)
     var desktop by mutableStateOf(true)
     var siteAdBlock by mutableStateOf(true)
-    var controllerMode by mutableStateOf(ControllerMode.Native)
+    var controllerMode by mutableStateOf(ControllerMode.Auto)
+    var gamePlayer by mutableStateOf(true)
     var blockedCount by mutableIntStateOf(0)
     var blockedPopup by mutableStateOf<String?>(null)
     var focusGame by mutableStateOf(false)
@@ -109,6 +111,7 @@ interface BrowserActions {
     fun toggleInput()
     fun toggleAdBlock()
     fun cycleController()
+    fun toggleGamePlayer()
     fun toggleControllerBrowse()
     fun installApp()
     fun addToHome()
@@ -217,7 +220,7 @@ private fun Toolbar(state: BrowserUiState, actions: BrowserActions) {
         }
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
             if (state.siteAdBlock) Pill("🛡 ${state.blockedCount}", Color(0xFF3DDC84)) else Pill("🛡 off", TextDim)
-            Pill(if (state.desktop) "Desktop" else "Mobile")
+            Pill(if (state.desktop) "Desktop" else "TV view")
             Pill(if (state.inputMode == InputMode.Cursor) "Pointer" else "D-pad")
             if (state.padCount > 0) Pill("🎮 ${state.padCount}${if (state.controllerBrowse) " browse" else ""}", Color(0xFFFFD23F))
         }
@@ -244,24 +247,25 @@ private fun MenuPanel(state: BrowserUiState, actions: BrowserActions) {
             listOf(
                 Triple("⛶", if (state.windowed) "Full screen" else "Windowed") { actions.toggleWindow() },
                 Triple("🎯", if (state.focusGame) "Unfocus game" else "Focus game") { actions.toggleFocusGame() },
-                Triple("🖥", if (state.desktop) "Mobile / TV view" else "Desktop view") { actions.toggleDesktop() },
+                Triple("🖥", if (state.desktop) "Switch to TV view" else "Switch to desktop view") { actions.toggleDesktop() },
                 Triple("➖", "Zoom out") { actions.zoom(-1) },
                 Triple("➕", "Zoom in") { actions.zoom(1) },
-                Triple("🖱", "Remote: ${if (state.inputMode == InputMode.Cursor) "D-pad keys" else "pointer"}") { actions.toggleInput() }
+                Triple("🖱", if (state.inputMode == InputMode.Cursor) "Remote: pointer" else "Remote: D-pad keys") { actions.toggleInput() }
             ),
             listOf(
                 Triple("🛡", if (state.siteAdBlock) "Ad block: on" else "Ad block: off") { actions.toggleAdBlock() },
-                Triple("🎮", "Pad: ${state.controllerMode.label}") { actions.cycleController() },
-                Triple("🕹", if (state.controllerBrowse) "Pad plays game" else "Pad moves pointer") { actions.toggleControllerBrowse() },
+                Triple("🕹", if (state.gamePlayer) "Game player: RetroTV" else "Game player: site's own") { actions.toggleGamePlayer() },
+                Triple("🎮", "Controller: ${state.controllerMode.label}") { actions.cycleController() },
+                Triple("🖲", if (state.controllerBrowse) "Controller plays game" else "Controller moves pointer") { actions.toggleControllerBrowse() },
                 Triple("📜", "Userscripts") { actions.show(Panel.Scripts) },
-                Triple("⚙", "This site's options") { actions.show(Panel.SiteOptions) },
-                Triple("❔", "Controls help") { actions.show(Panel.Help) }
+                Triple("⚙", "This site's options") { actions.show(Panel.SiteOptions) }
             ),
             listOfNotNull(
-                Triple("📲", when (state.appInstalled) { true -> "Remove app"; false -> "Install as app"; null -> "Install as app" }) { actions.installApp() },
+                Triple("📲", if (state.appInstalled == true) "Remove app" else "Install as app") { actions.installApp() },
                 Triple("⭐", "Add to home") { actions.addToHome() },
                 Triple("⬇", "Downloads") { actions.openDownloads() },
                 state.blockedPopup?.let { Triple("↗", "Open blocked pop-up") { actions.openBlocked() } },
+                Triple("❔", "Controls help") { actions.show(Panel.Help) },
                 Triple("🛠", "Settings") { actions.openSettings() },
                 Triple("⏻", "Exit") { actions.exit() }
             )
@@ -270,7 +274,7 @@ private fun MenuPanel(state: BrowserUiState, actions: BrowserActions) {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 row.forEachIndexed { c, (icon, label, action) ->
                     val m = Modifier.weight(1f).let { if (r == 0 && c == 0) it.focusRequester(first) else it }
-                    TvButton(label, action, m, icon = icon)
+                    MenuTile(icon, label, action, m)
                 }
             }
         }
@@ -315,7 +319,13 @@ private fun SiteOptionsPanel(state: BrowserUiState, actions: BrowserActions) {
         ChoiceRow(
             "View", listOf<ViewMode?>(null, ViewMode.Desktop, ViewMode.Mobile), s.viewMode,
             { it?.label ?: "Default" }, { v -> actions.updateSite { it.copy(viewMode = v) } },
-            Modifier.focusRequester(first), subtitle = "Desktop layout or the mobile/TV layout"
+            Modifier.focusRequester(first), subtitle = "Desktop: full-size layout, 1280 px wide · TV view: mobile layout, everything larger"
+        )
+        ChoiceRow(
+            "Game player", listOf<Boolean?>(null, true, false), s.player,
+            { when (it) { null -> "Default"; true -> "RetroTV player"; false -> "Site's own player" } },
+            { v -> actions.updateSite { it.copy(player = v) } },
+            subtitle = "RetroTV's player runs EmulatorJS games full screen, ad-free, with save slots"
         )
         ChoiceRow(
             "Ad blocking", listOf<Boolean?>(null, true, false), s.adBlock,
@@ -326,7 +336,7 @@ private fun SiteOptionsPanel(state: BrowserUiState, actions: BrowserActions) {
         ChoiceRow(
             "Controller", listOf<ControllerMode?>(null) + ControllerMode.entries, s.controllerMode,
             { it?.label ?: "Default" }, { v -> actions.updateSite { it.copy(controllerMode = v) } },
-            subtitle = "Gamepad API for most emulators; keyboard keys for older games"
+            subtitle = "Auto sends gamepad input to emulators and keys to everything else"
         )
         ChoiceRow(
             "Text size", listOf<Int?>(null, 75, 90, 100, 115, 130, 150, 175, 200), s.zoom,
@@ -348,8 +358,9 @@ private fun HelpPanel(actions: BrowserActions) {
             "Menu / Info / Guide" to "Opens the quick menu.",
             "Channel up/down" to "Scroll a page at a time.",
             "Play/Pause" to "Switches the remote between pointer and D-pad keys (arrow keys + Enter for games).",
-            "Controller" to "Goes straight to the game (Gamepad API or keyboard keys, set per site).",
-            "Select + Start" to "Opens the menu from a controller. \"Pad moves pointer\" lets a controller browse: stick/D-pad move, A clicks, B goes back, Y opens the menu, shoulders scroll."
+            "Controller" to "Goes straight to the game. Auto: a gamepad for emulators, keyboard keys for \"press any key\" screens.",
+            "Games" to "EmulatorJS games open in RetroTV's player (full screen, save slots). Back or Menu there opens the game menu.",
+            "Select + Start" to "Opens the menu from a controller. \"Controller moves pointer\" lets a controller browse: stick/D-pad move, A clicks, B goes back, Y opens the menu, shoulders scroll."
         )
         lines.forEach { (k, v) ->
             Row {

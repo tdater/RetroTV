@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -40,6 +41,7 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -146,7 +148,40 @@ fun TvButton(
                 color = if (!enabled) TextDim.copy(alpha = 0.5f) else if (focused) Color.White else Color.White.copy(alpha = 0.9f),
                 fontSize = 17.sp,
                 fontWeight = if (focused || selected) FontWeight.SemiBold else FontWeight.Normal,
-                maxLines = 1,
+                maxLines = 2,
+                lineHeight = 19.sp,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+/** Menu grid tile: icon above a label that wraps onto two lines instead of being cut off. */
+@Composable
+fun MenuTile(icon: String, label: String, onClick: () -> Unit, modifier: Modifier = Modifier, selected: Boolean = false) {
+    val accent = MaterialTheme.colorScheme.primary
+    TvClickable(
+        onClick = onClick,
+        modifier = modifier.heightIn(min = 86.dp),
+        shape = RoundedCornerShape(12.dp),
+        background = if (selected) accent.copy(alpha = 0.28f) else MaterialTheme.colorScheme.surface,
+        focusedBackground = if (selected) accent.copy(alpha = 0.45f) else MaterialTheme.colorScheme.surfaceVariant,
+        contentAlignment = Alignment.Center
+    ) { focused ->
+        Column(
+            Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(icon, fontSize = 22.sp)
+            Spacer(Modifier.size(4.dp))
+            Text(
+                label,
+                color = if (focused) Color.White else Color.White.copy(alpha = 0.9f),
+                fontSize = 14.sp,
+                lineHeight = 16.sp,
+                fontWeight = if (focused || selected) FontWeight.SemiBold else FontWeight.Normal,
+                textAlign = TextAlign.Center,
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
         }

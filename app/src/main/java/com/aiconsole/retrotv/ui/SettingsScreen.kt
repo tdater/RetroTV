@@ -29,6 +29,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.webkit.WebViewCompat
+import java.util.Locale
 import com.aiconsole.retrotv.RetroApp
 import com.aiconsole.retrotv.data.ACCENTS
 import com.aiconsole.retrotv.data.Backdrop
@@ -106,10 +107,26 @@ fun SettingsScreen(onBack: () -> Unit, onNavigate: (Screen) -> Unit) {
                     )
                 }
 
+                item { SectionTitle("Games") }
+                item {
+                    ToggleRow("RetroTV game player", prefs.builtInPlayer, { v -> set { it.copy(builtInPlayer = v) } },
+                        subtitle = "Games on EmulatorJS sites open in RetroTV's own full-screen player: no site ads, save slots, " +
+                            "the remote or a controller. Each site can still use its own player (Menu ▸ Game player).")
+                }
+                item {
+                    var size by remember { mutableStateOf(app.games.cacheSize()) }
+                    SettingRow("Downloaded games", "%.1f GB · Clear".format(Locale.US, size / 1e9), {
+                        app.games.clearCache()
+                        size = app.games.cacheSize()
+                        message = "Game cache cleared (your own ROM files are kept)"
+                    }, subtitle = "Games played in RetroTV's player are kept so they start instantly and offline (up to 1.5 GB)")
+                }
+                item { SettingRow("Clear recent games", "", { app.library.clear(); message = "Recent games cleared" }) }
+
                 item { SectionTitle("Browser") }
                 item {
                     ChoiceRow("Default view", ViewMode.entries, prefs.viewMode, { it.label }, { v -> set { it.copy(viewMode = v) } },
-                        subtitle = "Desktop gives the full site; Mobile / TV gives touch-sized layouts. Each site can override it.")
+                        subtitle = "Desktop: the full-size site, 1280 px wide. TV view: the mobile layout, everything larger. Each site can override it.")
                 }
                 item {
                     ChoiceRow("Default window", WindowMode.entries, prefs.windowMode, { it.label }, { v -> set { it.copy(windowMode = v) } },
@@ -156,7 +173,7 @@ fun SettingsScreen(onBack: () -> Unit, onNavigate: (Screen) -> Unit) {
                 item { SectionTitle("Controller") }
                 item {
                     ChoiceRow("Controller mode", ControllerMode.entries, prefs.controllerMode, { it.label }, { v -> set { it.copy(controllerMode = v) } },
-                        subtitle = "Gamepad API suits most emulators; Keyboard keys for games that only read the keyboard")
+                        subtitle = "Auto: a gamepad for emulators, keyboard keys for pages that want keys (\"press any key\"). Each site can override it.")
                 }
                 item { SettingRow("Keyboard key mapping", if (showMapping) "Hide" else "Edit", { showMapping = !showMapping }, subtitle = "Which key each button sends in keyboard mode") }
                 if (showMapping) {

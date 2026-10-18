@@ -60,16 +60,20 @@ import com.aiconsole.retrotv.data.ViewMode
 import com.aiconsole.retrotv.data.WindowMode
 import com.aiconsole.retrotv.downloads.DownloadItem
 import com.aiconsole.retrotv.downloads.SavedFile
+import com.aiconsole.retrotv.player.GameRequest
+import com.aiconsole.retrotv.player.PlayerActivity
 import com.aiconsole.retrotv.ui.MainActivity
 import com.aiconsole.retrotv.ui.RetroTheme
 import com.aiconsole.retrotv.web.AdBlock
 import com.aiconsole.retrotv.web.Gamepad
+import com.aiconsole.retrotv.web.Surrogates
 import com.aiconsole.retrotv.web.UserAgents
 import com.aiconsole.retrotv.web.Userscript
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
 import java.io.ByteArrayInputStream
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -109,6 +113,18 @@ class BrowserActivity : ComponentActivity(), BrowserActions {
 
     @Volatile
     private var adBlockActive = true
+
+    /** RetroTV's player takes games on this page (read by the game hook from any frame). */
+    @Volatile
+    private var playerActive = true
+
+    /** Hosts where the user chose the site's own player for this visit. */
+    private val sitePlayer = HashSet<String>()
+    private var lastLaunch = 0L
+    private val gameHook by lazy { runCatching { assets.open("js/game-hook.js").bufferedReader().use { it.readText() } }.getOrDefault("") }
+
+    /** Auto controller mode: buttons that were sent as keys (their release must be too). */
+    private val autoKeys = HashSet<Int>()
     private val blocked = AtomicInteger()
     private val pendingBlobs = ConcurrentHashMap<String, String>()
 
@@ -129,6 +145,17 @@ class BrowserActivity : ComponentActivity(), BrowserActions {
             dpadCenterDown = false
             swallowKey = KeyEvent.KEYCODE_DPAD_CENTER
             openMenu()
+        }
+    }
+
+    private val player = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
+        if (r.resultCode == PlayerActivity.RESULT_PLAY_ON_SITE) {
+            sitePlayer += ui.host
+            applySiteSettings(ui.host)
+            toast("Using ${ui.host}'s own player · Menu ▸ Game player to switch back")
+            webView?.reload()
+        } else {
+            toast("Back on ${ui.title.ifEmpty { ui.host }} · pick another game")
         }
     }
 
@@ -163,6 +190,7 @@ class BrowserActivity : ComponentActivity(), BrowserActions {
             profileName = "app_" + (ui.site?.id ?: UrlInput.registrable(UrlInput.host(startUrl).orEmpty())).replace(Regex("[^A-Za-z0-9_]"), "_")
         }
         intent.getStringExtra(EXTRA_TITLE)?.let { ui.title = it }
+        if (intent.getBooleanExtra(EXTRA_SITE_PLAYER, false)) UrlInput.host(startUrl)?.let { sitePlayer += it }
         if (prefs.keepScreenOn) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         WindowCompat.setDecorFitsSystemWindows(window, false)
         hideSystemBars()
@@ -279,6 +307,8 @@ class BrowserActivity : ComponentActivity(), BrowserActions {
         wv.isHapticFeedbackEnabled = false
         wv.addJavascriptInterface(pads.Bridge(), "RetroTVPad")
         wv.addJavascriptInterface(FilesBridge(), "RetroTVFiles")
+        wv.addJavascriptInterface(GameBridge(), "RetroTVGame")
+        wv.addJavascriptInterface(ViewBridge(), "RetroTVView")
         wv.webViewClient = Client()
         wv.webChromeClient = Chrome()
         wv.setDownloadListener { url, userAgent, contentDisposition, mimeType, _ ->
@@ -298,6 +328,8 @@ class BrowserActivity : ComponentActivity(), BrowserActions {
         if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
             docStartScripts = true
             scriptHandlers += WebViewCompat.addDocumentStartJavaScript(wv, VirtualPads.POLYFILL, setOf("*"))
+            scriptHandlers += WebViewCompat.addDocumentStartJavaScript(wv, PageScripts.VIEWPORT, setOf("*"))
+            if (gameHook.isNotEmpty()) scriptHandlers += WebViewCompat.addDocumentStartJavaScript(wv, gameHook, setOf("*"))
             if (settings.value.userscripts) {
                 app.userscripts.injectable.forEach { (_, js) ->
                     scriptHandlers += WebViewCompat.addDocumentStartJavaScript(wv, js, setOf("*"))
@@ -312,6 +344,8 @@ class BrowserActivity : ComponentActivity(), BrowserActions {
     private fun injectFallback(view: WebView) {
         if (docStartScripts) return
         view.evaluateJavascript(VirtualPads.POLYFILL, null)
+        view.evaluateJavascript(PageScripts.VIEWPORT, null)
+        if (gameHook.isNotEmpty()) view.evaluateJavascript(gameHook, null)
         if (settings.value.userscripts) app.userscripts.injectable.forEach { (_, js) -> view.evaluateJavascript(js, null) }
     }
 
@@ -328,12 +362,15 @@ class BrowserActivity : ComponentActivity(), BrowserActions {
         ui.controllerMode = settings.controllerMode(host)
         ui.sitePrefs = settings.site(host)
         adBlockActive = ui.siteAdBlock
+        ui.gamePlayer = settings.builtInPlayer(host) && host !in sitePlayer
+        playerActive = ui.gamePlayer
         val ua = settings.value.customUserAgent.ifBlank {
             if (desktop) UserAgents.desktop(defaultUa) else UserAgents.mobile(defaultUa)
         }
         val changed = wv.settings.userAgentString != ua
         wv.settings.userAgentString = ua
-        wv.settings.loadWithOverviewMode = desktop
+        // Both views set a fixed layout width (PageScripts.VIEWPORT) that's zoomed to fit the screen.
+        wv.settings.loadWithOverviewMode = true
         wv.settings.textZoom = settings.zoom(host)
         return changed
     }
@@ -397,8 +434,17 @@ class BrowserActivity : ComponentActivity(), BrowserActions {
 
         override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
             if (!adBlockActive || request.isForMainFrame) return null
-            if (!AdBlock.isBlocked(request.url.host)) return null
+            val host = request.url.host
+            if (!AdBlock.isBlocked(host)) return null
             countBlocked()
+            // Scripts get a stand-in (or an empty script) so pages waiting on an ad library carry on.
+            val path = request.url.path.orEmpty()
+            val surrogate = Surrogates.find(host.orEmpty(), path)
+            if (surrogate != null || Surrogates.looksLikeScript(path, request.requestHeaders["Accept"])) {
+                val body = (surrogate ?: Surrogates.EMPTY).toByteArray()
+                val headers = mapOf("Access-Control-Allow-Origin" to "*", "Cache-Control" to "no-store")
+                return WebResourceResponse("application/javascript", "utf-8", 200, "OK", headers, ByteArrayInputStream(body))
+            }
             return WebResourceResponse("text/plain", "utf-8", ByteArrayInputStream(ByteArray(0)))
         }
 
@@ -615,6 +661,86 @@ class BrowserActivity : ComponentActivity(), BrowserActions {
         }
     }
 
+    /**
+     * The game hook (assets/js/game-hook.js) in any frame: an EmulatorJS game is about to start.
+     * When RetroTV's player is on here, the hook stops the site's emulator and hands the game over.
+     */
+    inner class GameBridge {
+        @JavascriptInterface
+        fun enabled(core: String): Boolean = playerActive && core.isNotBlank()
+
+        @JavascriptInterface
+        fun launch(json: String) {
+            handler.post { launchGame(json) }
+        }
+
+        @JavascriptInterface
+        fun failed(message: String) {
+            handler.post { toast("Couldn't hand the game to RetroTV's player ($message) · Menu ▸ Game player: site") }
+        }
+
+        @JavascriptInterface
+        fun blobOpen(name: String, size: Double): String = if (playerActive) app.games.blobOpen(name, size.toLong()).orEmpty() else ""
+
+        @JavascriptInterface
+        fun blobWrite(token: String, data: String) = app.games.blobWrite(token, data)
+
+        @JavascriptInterface
+        fun blobClose(token: String): Boolean = app.games.blobClose(token)
+    }
+
+    /** Layout width for [PageScripts.VIEWPORT]. */
+    inner class ViewBridge {
+        @JavascriptInterface
+        fun width(host: String): Int = if (host.isEmpty()) 0 else settings.viewMode(host).viewportWidth
+    }
+
+    private fun launchGame(json: String) {
+        val now = SystemClock.uptimeMillis()
+        if (!playerActive || isFinishing || now - lastLaunch < 3000) return
+        val o = runCatching { JSONObject(json) }.getOrNull() ?: return
+        fun opt(key: String) = o.optString(key).takeIf { it.isNotEmpty() && it != "null" }
+        fun file(value: String?): String? = when {
+            value == null -> null
+            value.startsWith("blob:") -> app.games.blobFile(value.removePrefix("blob:"))?.let { "file:" + it.absolutePath }
+            value.startsWith("http://") || value.startsWith("https://") -> value
+            else -> null
+        }
+        val game = file(opt("game")) ?: return toast("RetroTV's player couldn't read this game's file")
+        lastLaunch = now
+        // An embed frame's title is often just "Play"; the page's own title names the game better.
+        val frameTitle = opt("title")?.takeIf { o.optBoolean("top") || (it.length > 4 && !it.startsWith("Play", ignoreCase = true)) }
+        val request = GameRequest(
+            core = o.optString("core"),
+            game = game,
+            bios = file(opt("bios")),
+            parent = file(opt("parent")),
+            patch = file(opt("patch")),
+            state = file(opt("state")),
+            gameName = opt("gameName").orEmpty(),
+            title = cleanTitle(frameTitle ?: ui.title),
+            page = ui.url.ifEmpty { opt("page").orEmpty() },
+            referer = opt("page").orEmpty(),
+            userAgent = webView?.settings?.userAgentString.orEmpty(),
+            profile = profileName
+        )
+        releaseKeys()
+        show(null)
+        try {
+            player.launch(PlayerActivity.intent(this, request))
+        } catch (e: Exception) {
+            toast("Couldn't open the player: ${e.message}")
+        }
+    }
+
+    /** "Play Contra Online - Site" → "Contra". */
+    private fun cleanTitle(title: String): String {
+        var t = title.substringBefore(" | ").substringBefore(" – ")
+        if (t.contains(" - ")) t = t.substringBeforeLast(" - ").ifBlank { t }
+        t = t.removePrefix("Play ").removeSuffix(" Online").removeSuffix(" online").trim()
+        return t.ifBlank { title }
+    }
+
     // ---- Layout and modes ----
 
     private fun applyWindowMode() {
@@ -791,11 +917,20 @@ class BrowserActivity : ComponentActivity(), BrowserActions {
         val mode = ui.controllerMode
         var handled = false
         if (mode != ControllerMode.Keyboard) handled = pads.onKey(event)
-        if (mode != ControllerMode.Native) {
+        // Auto: keys only while the page isn't reading gamepads, decided when the button goes down.
+        val sendKeys = when (mode) {
+            ControllerMode.Native -> false
+            ControllerMode.Keyboard, ControllerMode.Both -> true
+            ControllerMode.Auto -> if (down) !pads.pagePolls else code in autoKeys
+        }
+        if (sendKeys) {
             val mapped = settings.value.mapping[code]
             if (mapped != null && mapped != 0) {
                 sendKey(event, mapped)
                 handled = true
+                if (mode == ControllerMode.Auto) {
+                    if (down) autoKeys += code else autoKeys -= code
+                }
             }
         }
         return handled || super.dispatchKeyEvent(event)
@@ -832,7 +967,8 @@ class BrowserActivity : ComponentActivity(), BrowserActions {
             }
             val mode = ui.controllerMode
             if (mode != ControllerMode.Keyboard) pads.onMotion(ev)
-            if (mode != ControllerMode.Native) stickToKeys(ev)
+            val keys = mode == ControllerMode.Keyboard || mode == ControllerMode.Both || (mode == ControllerMode.Auto && !pads.pagePolls)
+            if (keys) stickToKeys(ev) else releaseStickKeys()
             return true
         }
         return super.dispatchGenericMotionEvent(ev)
@@ -864,11 +1000,20 @@ class BrowserActivity : ComponentActivity(), BrowserActions {
         (customView ?: webView)?.dispatchKeyEvent(event)
     }
 
-    private fun releaseKeys() {
+    private fun releaseStickKeys() {
+        if (stickKeys.isEmpty()) return
         val t = SystemClock.uptimeMillis()
         val mapping = settings.value.mapping
         stickKeys.forEach { dir -> mapping[dir]?.takeIf { it != 0 }?.let { dispatchToPage(keyboardEvent(t, KeyEvent.ACTION_UP, it)) } }
         stickKeys = emptySet()
+    }
+
+    private fun releaseKeys() {
+        releaseStickKeys()
+        val t = SystemClock.uptimeMillis()
+        val mapping = settings.value.mapping
+        autoKeys.forEach { code -> mapping[code]?.takeIf { it != 0 }?.let { dispatchToPage(keyboardEvent(t, KeyEvent.ACTION_UP, it)) } }
+        autoKeys.clear()
         pads.releaseAll()
         cursor.releaseAll()
     }
@@ -1018,7 +1163,7 @@ class BrowserActivity : ComponentActivity(), BrowserActions {
         val host = ui.host
         settings.updateSite(host) { it.copy(viewMode = if (ui.desktop) ViewMode.Mobile else ViewMode.Desktop) }
         applySiteSettings(host)
-        toast(if (ui.desktop) "Desktop view for $host" else "Mobile / TV view for $host")
+        toast(if (ui.desktop) "Desktop view for $host: full-size layout, 1280 px wide" else "TV view for $host: mobile layout, everything larger")
         show(null)
         webView?.reload()
     }
@@ -1039,6 +1184,17 @@ class BrowserActivity : ComponentActivity(), BrowserActions {
         settings.updateSite(host) { it.copy(adBlock = if (ui.siteAdBlock) false else null) }
         applySiteSettings(host)
         toast(if (ui.siteAdBlock) "Ad blocking on for $host" else "Ad blocking off for $host")
+        webView?.reload()
+    }
+
+    override fun toggleGamePlayer() {
+        val host = ui.host
+        val next = !ui.gamePlayer
+        sitePlayer -= host
+        settings.updateSite(host) { it.copy(player = if (next == settings.value.builtInPlayer) null else next) }
+        applySiteSettings(host)
+        show(null)
+        toast(if (ui.gamePlayer) "Games on $host open in RetroTV's player" else "Games on $host use the site's own player")
         webView?.reload()
     }
 
@@ -1162,6 +1318,9 @@ class BrowserActivity : ComponentActivity(), BrowserActions {
         const val EXTRA_SITE_ID = "site_id"
         const val EXTRA_TITLE = "title"
         const val EXTRA_STANDALONE = "standalone"
+
+        /** Open with the site's own game player (from the player's "Play on the site"). */
+        const val EXTRA_SITE_PLAYER = "site_player"
         private const val LONG_PRESS_MS = 650L
 
         fun open(context: Context, url: String, siteId: String? = null, title: String? = null): Intent =

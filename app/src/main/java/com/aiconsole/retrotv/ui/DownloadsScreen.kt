@@ -4,6 +4,8 @@ import android.app.Activity
 import android.os.Build
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -33,6 +35,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.aiconsole.retrotv.RetroApp
+import com.aiconsole.retrotv.player.Systems
 import com.aiconsole.retrotv.data.Http
 import com.aiconsole.retrotv.data.UrlInput
 import com.aiconsole.retrotv.downloads.ApkSource
@@ -158,41 +161,53 @@ private fun DownloadList() {
     val app = RetroApp.from(context)
     var items by remember { mutableStateOf<List<DownloadItem>>(emptyList()) }
     var tick by remember { mutableStateOf(0) }
+    var note by remember { mutableStateOf("") }
+    val roms = rememberRomPicker { note = it }
     LaunchedEffect(tick) {
         while (true) {
             items = runCatching { app.downloads.list() }.getOrDefault(emptyList())
             delay(if (items.any { it.running }) 1000 else 4000)
         }
     }
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("Saved to ${app.downloads.folderLabel}", color = TextDim, fontSize = 14.sp, modifier = Modifier.weight(1f))
-            TvButton("Clear finished", { app.downloads.clearFinished(); tick++ }, icon = "🧹")
-        }
-        if (items.isEmpty()) Text("Nothing downloaded yet.", color = TextDim)
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(items, key = { it.id }) { d ->
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    TvClickable(
-                        onClick = { if (d.done) app.downloads.open(context as Activity, d) },
-                        modifier = Modifier.weight(1f),
-                        focusedScale = 1.02f
-                    ) {
-                        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f)) {
-                                Text(d.title, color = Color.White, fontSize = 17.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                Text(
-                                    d.statusLabel + (if (d.total > 0) " · ${d.total / 1_048_576} MB" else ""),
-                                    color = if (d.failed) Color(0xFFFF6B6B) else TextDim, fontSize = 13.sp
-                                )
+    Box(Modifier.fillMaxSize()) {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("Saved to ${app.downloads.folderLabel}", color = TextDim, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                TvButton("Clear finished", { app.downloads.clearFinished(); tick++ }, icon = "🧹")
+            }
+            if (note.isNotEmpty()) Text(note, color = MaterialTheme.colorScheme.primary, fontSize = 15.sp)
+            if (items.isEmpty()) Text("Nothing downloaded yet.", color = TextDim)
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(items, key = { it.id }) { d ->
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        TvClickable(
+                            onClick = { if (d.done) app.downloads.open(context as Activity, d) },
+                            modifier = Modifier.weight(1f),
+                            focusedScale = 1.02f
+                        ) {
+                            Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(d.title, color = Color.White, fontSize = 17.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(
+                                        d.statusLabel + (if (d.total > 0) " · ${d.total / 1_048_576} MB" else ""),
+                                        color = if (d.failed) Color(0xFFFF6B6B) else TextDim, fontSize = 13.sp
+                                    )
+                                }
+                                if (d.done) Pill(if (d.isApk) "Install" else "Open with…")
                             }
-                            if (d.done) Pill(if (d.isApk) "Install" else "Open with…")
                         }
+                        if (d.done && !d.isApk && Systems.isRom(d.title)) {
+                            TvButton("Play", {
+                                val uri = app.downloads.uriFor(d)
+                                if (uri != null) roms.play(uri, d.title)
+                            }, icon = "🎮")
+                        }
+                        TvButton("Delete", { app.downloads.remove(d.id); tick++ }, icon = "🗑")
                     }
-                    TvButton("Delete", { app.downloads.remove(d.id); tick++ }, icon = "🗑")
                 }
             }
         }
+        roms.Dialog()
     }
 }
 

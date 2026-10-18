@@ -48,6 +48,11 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".player.PlayerActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode|density|fontScale"
+            android:exported="false" />
+
         <!-- Behind each installed site app and pinned shortcut: opens the site in its own task. -->
         <activity
             android:name=".apps.SiteAppActivity"

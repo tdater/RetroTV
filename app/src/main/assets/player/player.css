@@ -1,0 +1,29 @@
+html, body {
+  margin: 0;
+  height: 100%;
+  background: #000;
+  overflow: hidden;
+  color: #fff;
+  font-family: sans-serif;
+}
+#wrap {
+  position: fixed;
+  inset: 0;
+}
+#game {
+  width: 100%;
+  height: 100%;
+}
+#note {
+  position: fixed;
+  left: 50%;
+  bottom: 6%;
+  transform: translateX(-50%);
+  background: rgba(10, 8, 20, 0.88);
+  border-radius: 18px;
+  padding: 10px 22px;
+  font-size: 18px;
+  z-index: 9999;
+}
+/* The pointer is off while playing, so EmulatorJS's own touch overlay and start hint stay hidden. */
+.ejs_virtualGamepad_parent { display: none !important; }

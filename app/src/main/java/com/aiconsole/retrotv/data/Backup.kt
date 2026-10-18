@@ -28,6 +28,7 @@ object Backup {
             put("cursorSize", prefs.cursorSize)
             put("customBlockList", prefs.customBlockList)
             put("startupSite", prefs.startupSite)
+            put("builtInPlayer", prefs.builtInPlayer)
         })
         return o.toString(2)
     }
@@ -53,6 +54,7 @@ object Backup {
             cursorSize = s.optInt("cursorSize", current.cursorSize),
             customBlockList = s.optString("customBlockList", current.customBlockList),
             startupSite = s.optString("startupSite", current.startupSite),
+            builtInPlayer = s.optBoolean("builtInPlayer", current.builtInPlayer),
             favorites = strings("favorites").toSet(),
             hiddenSites = strings("hidden").toSet()
         )

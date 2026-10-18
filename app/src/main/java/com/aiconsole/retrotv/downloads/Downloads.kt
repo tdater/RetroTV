@@ -144,6 +144,8 @@ class Downloads(private val context: Context) {
         list().filter { !it.running }.forEach { remove(it.id) }
     }
 
+    fun uriFor(item: DownloadItem): Uri? = runCatching { dm.getUriForDownloadedFile(item.id) }.getOrNull()
+
     /** Opens a finished download: installs an APK, otherwise offers the apps that can open it. */
     fun open(activity: Activity, item: DownloadItem) {
         val uri = dm.getUriForDownloadedFile(item.id) ?: return toast(activity, "File is missing")
