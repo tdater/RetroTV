@@ -23,7 +23,7 @@ class CursorView(context: Context) : View(context) {
         private set
     var sizeLevel = 2
     var accent = 0xFF9C6BFF.toInt()
-    var pressed = false
+    var isDown = false
         set(value) { field = value; invalidate() }
     var shown = true
         set(value) { field = value; invalidate() }
@@ -62,14 +62,14 @@ class CursorView(context: Context) : View(context) {
         arrow.lineTo(px + s * 0.6f, py + s * 0.98f)
         arrow.lineTo(px + s * 1.08f, py + s * 0.98f)
         arrow.close()
-        fill.color = if (pressed) accent else 0xFFFFFFFF.toInt()
+        fill.color = if (isDown) accent else 0xFFFFFFFF.toInt()
         canvas.drawPath(arrow, fill)
         stroke.color = 0xFF000000.toInt()
         stroke.strokeWidth = 1.6f * d
         canvas.drawPath(arrow, stroke)
         // Accent halo so the pointer is visible on any page.
         stroke.color = accent
-        stroke.alpha = if (pressed) 220 else 120
+        stroke.alpha = if (isDown) 220 else 120
         stroke.strokeWidth = 2.2f * d
         canvas.drawCircle(px, py, s * 0.45f, stroke)
         stroke.alpha = 255
@@ -200,7 +200,7 @@ class CursorController(
         Choreographer.getInstance().postFrameCallback(this)
     }
 
-    /** OK pressed: remember where; a tap is sent on release, a drag starts if the pointer moves. */
+    /** OK held: remember where; a tap is sent on release, a drag starts if the pointer moves. */
     fun pressDown() {
         if (pressing) return
         pressing = true
@@ -208,13 +208,13 @@ class CursorController(
         pressDownTime = SystemClock.uptimeMillis()
         pressX = view.px
         pressY = view.py
-        view.pressed = true
+        view.isDown = true
     }
 
     fun pressUp() {
         if (!pressing) return
         pressing = false
-        view.pressed = false
+        view.isDown = false
         if (dragging) {
             touch(MotionEvent.ACTION_UP, view.px, view.py, pressDownTime)
         } else {
@@ -228,7 +228,7 @@ class CursorController(
         if (dragging) touch(MotionEvent.ACTION_CANCEL, view.px, view.py, pressDownTime)
         pressing = false
         dragging = false
-        view.pressed = false
+        view.isDown = false
     }
 
     fun tap(x: Float, y: Float) {
