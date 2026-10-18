@@ -67,7 +67,9 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
 
     private val inputListener = object : InputManager.InputDeviceListener {
         override fun onInputDeviceAdded(deviceId: Int) = Unit
-        override fun onInputDeviceRemoved(deviceId: Int) = pads.forget(deviceId)
+        override fun onInputDeviceRemoved(deviceId: Int) {
+            pads.forget(deviceId)
+        }
         override fun onInputDeviceChanged(deviceId: Int) = Unit
     }
 
