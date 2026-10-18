@@ -1,0 +1,344 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <uses-permission android:name="com.android.launcher.permission.INSTALL_SHORTCUT" />
+
+    <uses-feature android:name="android.software.leanback" android:required="false" />
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+    <uses-feature android:name="android.hardware.gamepad" android:required="false" />
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
+
+    <application
+        android:name=".RetroApp"
+        android:allowBackup="true"
+        android:banner="@drawable/banner"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.RetroTV"
+        android:usesCleartextTraffic="true">
+
+        <activity
+            android:name=".ui.MainActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode|density"
+            android:exported="true"
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- The browser. Also offered for http(s) links from other apps. Controller hot-plug
+             changes keyboard/navigation config, so the activity must not be recreated. -->
+        <activity
+            android:name=".browser.BrowserActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode|density|fontScale"
+            android:exported="true"
+            android:windowSoftInputMode="adjustPan">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="http" />
+                <data android:scheme="https" />
+            </intent-filter>
+        </activity>
+
+        <!-- Behind each installed site app and pinned shortcut: opens the site in its own task. -->
+        <activity
+            android:name=".apps.SiteAppActivity"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.NoDisplay" />
+
+        <!-- "Install as app" for the built-in sites: disabled until the user installs one. -->
+        <activity-alias
+            android:name=".site.retrogames_cc"
+            android:banner="@drawable/banner_retrogames_cc"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher"
+            android:label="@string/site_retrogames_cc"
+            android:targetActivity=".apps.SiteAppActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+            <meta-data
+                android:name="com.aiconsole.retrotv.SITE_ID"
+                android:value="retrogames_cc" />
+        </activity-alias>
+        <activity-alias
+            android:name=".site.playclassic"
+            android:banner="@drawable/banner_playclassic"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher"
+            android:label="@string/site_playclassic"
+            android:targetActivity=".apps.SiteAppActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+            <meta-data
+                android:name="com.aiconsole.retrotv.SITE_ID"
+                android:value="playclassic" />
+        </activity-alias>
+        <activity-alias
+            android:name=".site.classicreload"
+            android:banner="@drawable/banner_classicreload"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher"
+            android:label="@string/site_classicreload"
+            android:targetActivity=".apps.SiteAppActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+            <meta-data
+                android:name="com.aiconsole.retrotv.SITE_ID"
+                android:value="classicreload" />
+        </activity-alias>
+        <activity-alias
+            android:name=".site.emulatorgamer"
+            android:banner="@drawable/banner_emulatorgamer"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher"
+            android:label="@string/site_emulatorgamer"
+            android:targetActivity=".apps.SiteAppActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+            <meta-data
+                android:name="com.aiconsole.retrotv.SITE_ID"
+                android:value="emulatorgamer" />
+        </activity-alias>
+        <activity-alias
+            android:name=".site.retrogamesnexus"
+            android:banner="@drawable/banner_retrogamesnexus"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher"
+            android:label="@string/site_retrogamesnexus"
+            android:targetActivity=".apps.SiteAppActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+            <meta-data
+                android:name="com.aiconsole.retrotv.SITE_ID"
+                android:value="retrogamesnexus" />
+        </activity-alias>
+        <activity-alias
+            android:name=".site.internetarcade"
+            android:banner="@drawable/banner_internetarcade"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher"
+            android:label="@string/site_internetarcade"
+            android:targetActivity=".apps.SiteAppActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+            <meta-data
+                android:name="com.aiconsole.retrotv.SITE_ID"
+                android:value="internetarcade" />
+        </activity-alias>
+        <activity-alias
+            android:name=".site.oldgames"
+            android:banner="@drawable/banner_oldgames"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher"
+            android:label="@string/site_oldgames"
+            android:targetActivity=".apps.SiteAppActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+            <meta-data
+                android:name="com.aiconsole.retrotv.SITE_ID"
+                android:value="oldgames" />
+        </activity-alias>
+        <activity-alias
+            android:name=".site.afterplay"
+            android:banner="@drawable/banner_afterplay"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher"
+            android:label="@string/site_afterplay"
+            android:targetActivity=".apps.SiteAppActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+            <meta-data
+                android:name="com.aiconsole.retrotv.SITE_ID"
+                android:value="afterplay" />
+        </activity-alias>
+        <activity-alias
+            android:name=".site.rec0ded88"
+            android:banner="@drawable/banner_rec0ded88"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher"
+            android:label="@string/site_rec0ded88"
+            android:targetActivity=".apps.SiteAppActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+            <meta-data
+                android:name="com.aiconsole.retrotv.SITE_ID"
+                android:value="rec0ded88" />
+        </activity-alias>
+        <activity-alias
+            android:name=".site.retrogames_onl"
+            android:banner="@drawable/banner_retrogames_onl"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher"
+            android:label="@string/site_retrogames_onl"
+            android:targetActivity=".apps.SiteAppActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+            <meta-data
+                android:name="com.aiconsole.retrotv.SITE_ID"
+                android:value="retrogames_onl" />
+        </activity-alias>
+        <activity-alias
+            android:name=".site.playretrogames"
+            android:banner="@drawable/banner_playretrogames"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher"
+            android:label="@string/site_playretrogames"
+            android:targetActivity=".apps.SiteAppActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+            <meta-data
+                android:name="com.aiconsole.retrotv.SITE_ID"
+                android:value="playretrogames" />
+        </activity-alias>
+        <activity-alias
+            android:name=".site.webrcade"
+            android:banner="@drawable/banner_webrcade"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher"
+            android:label="@string/site_webrcade"
+            android:targetActivity=".apps.SiteAppActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+            <meta-data
+                android:name="com.aiconsole.retrotv.SITE_ID"
+                android:value="webrcade" />
+        </activity-alias>
+        <activity-alias
+            android:name=".site.free80sarcade"
+            android:banner="@drawable/banner_free80sarcade"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher"
+            android:label="@string/site_free80sarcade"
+            android:targetActivity=".apps.SiteAppActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+            <meta-data
+                android:name="com.aiconsole.retrotv.SITE_ID"
+                android:value="free80sarcade" />
+        </activity-alias>
+        <activity-alias
+            android:name=".site.gamonl"
+            android:banner="@drawable/banner_gamonl"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher"
+            android:label="@string/site_gamonl"
+            android:targetActivity=".apps.SiteAppActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+            <meta-data
+                android:name="com.aiconsole.retrotv.SITE_ID"
+                android:value="gamonl" />
+        </activity-alias>
+        <activity-alias
+            android:name=".site.msdos"
+            android:banner="@drawable/banner_msdos"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher"
+            android:label="@string/site_msdos"
+            android:targetActivity=".apps.SiteAppActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+            <meta-data
+                android:name="com.aiconsole.retrotv.SITE_ID"
+                android:value="msdos" />
+        </activity-alias>
+        <activity-alias
+            android:name=".site.consolelivingroom"
+            android:banner="@drawable/banner_consolelivingroom"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher"
+            android:label="@string/site_consolelivingroom"
+            android:targetActivity=".apps.SiteAppActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+            <meta-data
+                android:name="com.aiconsole.retrotv.SITE_ID"
+                android:value="consolelivingroom" />
+        </activity-alias>
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.files"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+    </application>
+</manifest>

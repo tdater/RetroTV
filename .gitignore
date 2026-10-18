@@ -1,0 +1,31 @@
+*.iml
+.gradle
+/local.properties
+/.idea/caches
+/.idea/libraries
+/.idea/modules.xml
+/.idea/workspace.xml
+/.idea/navEditor.xml
+/.idea/assetWizardSettings.xml
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+
+# Kotlin compiler daemon data
+.kotlin/
+
+# Signing keys and built packages: never upload these
+*.jks
+*.keystore
+*.p12
+*.apk
+*.aab
+
+# Per-machine settings
+.claude/settings.local.json
+/.idea/deploymentTargetSelector.xml
+/.idea/deviceManager.xml
+/.idea/emulatorDisplays.xml

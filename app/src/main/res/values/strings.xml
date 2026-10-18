@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">RetroTV</string>
+    <string name="site_retrogames_cc">RetroGames.cc</string>
+    <string name="site_playclassic">PlayClassic.games</string>
+    <string name="site_classicreload">ClassicReload</string>
+    <string name="site_emulatorgamer">Emulator Gamer</string>
+    <string name="site_retrogamesnexus">Retro Games Nexus</string>
+    <string name="site_internetarcade">Internet Arcade</string>
+    <string name="site_oldgames">OldGames.app</string>
+    <string name="site_afterplay">Afterplay.io</string>
+    <string name="site_rec0ded88">Rec0deD:88</string>
+    <string name="site_retrogames_onl">RetroGames.onl</string>
+    <string name="site_playretrogames">PlayRetroGames</string>
+    <string name="site_webrcade">webЯcade</string>
+    <string name="site_free80sarcade">Free 80s Arcade</string>
+    <string name="site_gamonl">GAM.ONL</string>
+    <string name="site_msdos">MS-DOS Library</string>
+    <string name="site_consolelivingroom">Console Living Room</string>
+</resources>
