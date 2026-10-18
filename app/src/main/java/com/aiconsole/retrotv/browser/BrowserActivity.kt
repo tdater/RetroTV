@@ -669,6 +669,9 @@ class BrowserActivity : ComponentActivity(), BrowserActions {
     private fun isArrow(code: Int) = code == KeyEvent.KEYCODE_DPAD_UP || code == KeyEvent.KEYCODE_DPAD_DOWN ||
         code == KeyEvent.KEYCODE_DPAD_LEFT || code == KeyEvent.KEYCODE_DPAD_RIGHT
 
+    // TV remotes need the raw Back key (long press opens the menu); gesture/system back still goes
+    // through the OnBackPressedCallback. RestrictedApi is lint's false positive on super.dispatchKeyEvent.
+    @SuppressLint("RestrictedApi", "GestureBackNavigation")
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         val code = event.keyCode
         val down = event.action == KeyEvent.ACTION_DOWN
@@ -769,6 +772,7 @@ class BrowserActivity : ComponentActivity(), BrowserActions {
         return super.dispatchKeyEvent(event)
     }
 
+    @SuppressLint("RestrictedApi")
     private fun handleController(event: KeyEvent): Boolean {
         val code = event.keyCode
         val down = event.action == KeyEvent.ACTION_DOWN
