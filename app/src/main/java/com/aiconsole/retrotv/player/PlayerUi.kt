@@ -59,6 +59,7 @@ class PlayerUiState {
     var toastId by mutableIntStateOf(0)
     var players by mutableStateOf(listOf<String?>(null, null, null, null))
     var claiming by mutableStateOf<Int?>(null)
+    var filter by mutableStateOf("disabled")
 }
 
 interface PlayerActions {
@@ -71,6 +72,7 @@ interface PlayerActions {
     fun toggleMute()
     fun emulatorMenu()
     fun openPlayers()
+    fun cycleFilter()
     fun claimPlayer(slot: Int)
     fun buttonLayout()
     fun playOnSite()
@@ -117,6 +119,7 @@ private fun MenuPanel(state: PlayerUiState, title: String, system: String, canPl
             MenuTile("💾", "Save to slot $slot", actions::save, Modifier.weight(1f))
             MenuTile("📂", "Load slot $slot ($used)", actions::load, Modifier.weight(1f))
             MenuTile("↺", "Restart game", actions::restart, Modifier.weight(1f))
+            MenuTile("🖥", "Filter: ${Filters.label(state.filter)}", actions::cycleFilter, Modifier.weight(1f))
         }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             for (n in 1..SaveNames.SLOTS) SlotCard(n, n == slot, state.slotTimes[n], state.thumbs[n], { actions.selectSlot(n) }, Modifier.weight(1f))

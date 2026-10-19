@@ -29,6 +29,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.ComposeView
+import androidx.core.content.edit
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -71,6 +72,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
     private var swallowKey = -1
     private var resumedAt = 0L
     private var rewinding = false
+    private val gamePrefs by lazy { getSharedPreferences("game_prefs", Context.MODE_PRIVATE) }
 
     private val inputListener = object : InputManager.InputDeviceListener {
         override fun onInputDeviceAdded(deviceId: Int) = Unit
@@ -191,6 +193,9 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         files.forEach { (k, v) -> query[k] = v }
         if (legacy) query["legacy"] = "1"
         if (app.settings.value.rewind) query["rewind"] = "1"
+        ui.filter = gamePrefs.getString("filter_" + request.key, null) ?: app.settings.value.filter
+        if (ui.filter != "disabled") query["shader"] = ui.filter
+        if (app.settings.value.sharpPixels) query["sharp"] = "1"
         if (threads) {
             query["threads"] = "1"
             query["coi"] = "1"
@@ -408,6 +413,13 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
     override fun toggleMute() {
         ui.muted = !ui.muted
         js("mute(${ui.muted})")
+    }
+
+    /** Next display filter for this game, applied live and remembered for it. */
+    override fun cycleFilter() {
+        ui.filter = Filters.next(ui.filter)
+        gamePrefs.edit { putString("filter_" + request.key, ui.filter) }
+        js("filter('${ui.filter}')")
     }
 
     override fun openPlayers() {

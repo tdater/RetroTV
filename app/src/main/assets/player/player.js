@@ -37,6 +37,8 @@
   window.EJS_disableAutoLang = false;
   window.EJS_defaultOptions = { 'virtual-gamepad': 'disabled' };
   if (q.get('rewind') === '1') window.EJS_defaultOptions.rewindEnabled = 'enabled';
+  if (q.get('shader')) window.EJS_defaultOptions.shader = q.get('shader');
+  if (q.get('sharp') === '1') document.documentElement.classList.add('sharp');
   window.EJS_Buttons = { netplay: false };
   if (q.get('legacy') === '1') window.EJS_forceLegacyCores = true;
   window.EJS_threads = q.get('threads') === '1' && typeof SharedArrayBuffer === 'function' && self.crossOriginIsolated === true;
@@ -100,8 +102,14 @@
   function filled() {
     try { return JSON.parse(SAVES ? SAVES.slots(key) : '{}') || {}; } catch (e) { return {}; }
   }
+  /** The slot thumbnail: EmulatorJS resolves a Promise of PNG bytes; give up after 2 s rather than hold up the save. */
   function screenshot(e) {
-    try { var p = e.gameManager.screenshot(); return p && p.length ? p : null; } catch (x) { return null; }
+    return new Promise(function (resolve) {
+      var done = false;
+      function finish(p) { if (!done) { done = true; resolve(p && p.length ? p : null); } }
+      setTimeout(function () { finish(null); }, 2000);
+      try { Promise.resolve(e.gameManager.screenshot()).then(finish, function () { finish(null); }); } catch (x) { finish(null); }
+    });
   }
 
   function db() {
@@ -147,10 +155,12 @@
     save: function (slot) {
       var e, data;
       try { e = emu(); data = e.gameManager.getState(); } catch (x) { tell('saved', slot, false, String(x.message || x)); return; }
-      var err = upload(slot, data, screenshot(e));
-      if (err) { tell('saved', slot, false, err); return; }
-      show('Saved to slot ' + slot);
-      tell('saved', slot, true, '');
+      screenshot(e).then(function (png) {
+        var err = upload(slot, data, png);
+        if (err) { tell('saved', slot, false, err); return; }
+        show('Saved to slot ' + slot);
+        tell('saved', slot, true, '');
+      });
     },
     load: function (slot) {
       var e;
@@ -176,6 +186,7 @@
     restart: function () { try { emu().gameManager.restart(); show('Restarted'); } catch (e) {} },
     pause: function (on) { try { var e = emu(); if (on) e.pause(); else e.play(); } catch (x) {} },
     fast: function (on) { try { var e = emu(); e.isFastForward = !!on; e.gameManager.toggleFastForward(on ? 1 : 0); } catch (x) {} },
+    filter: function (name) { try { emu().changeSettingOption('shader', name); } catch (x) {} },
     rewind: function (on) {
       try { var e = emu(); if (e.rewindEnabled) e.gameManager.functions.toggleRewind(on ? 1 : 0); } catch (x) {}
     },

@@ -50,6 +50,7 @@ import com.aiconsole.retrotv.data.Prefs
 import com.aiconsole.retrotv.data.UrlInput
 import com.aiconsole.retrotv.data.ViewMode
 import com.aiconsole.retrotv.data.WindowMode
+import com.aiconsole.retrotv.player.Filters
 import com.aiconsole.retrotv.player.Systems
 import com.aiconsole.retrotv.web.AdBlock
 import com.aiconsole.retrotv.web.Gamepad
@@ -135,6 +136,14 @@ fun SettingsScreen(onBack: () -> Unit, onNavigate: (Screen) -> Unit) {
                     ToggleRow("RetroTV game player", prefs.builtInPlayer, { v -> set { it.copy(builtInPlayer = v) } },
                         subtitle = "Games on EmulatorJS sites open in RetroTV's own full-screen player: no site ads, save slots, " +
                             "the remote or a controller. Each site can still use its own player (Menu ▸ Game player).")
+                }
+                item {
+                    ChoiceRow("Display filter", Filters.ALL.map { it.first }, prefs.filter, { Filters.label(it) }, { v -> set { it.copy(filter = v) } },
+                        subtitle = "CRT looks for the built-in player; each game can pick its own from the game menu")
+                }
+                item {
+                    ToggleRow("Sharp pixels", prefs.sharpPixels, { v -> set { it.copy(sharpPixels = v) } },
+                        subtitle = "Crisp, blocky pixels instead of a smoothed picture when games are scaled up")
                 }
                 item {
                     ToggleRow("Rewind", prefs.rewind, { v -> set { it.copy(rewind = v) } },

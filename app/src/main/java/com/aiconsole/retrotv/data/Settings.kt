@@ -55,7 +55,10 @@ data class Prefs(
     /** Sites (hosts) whose games have opened in RetroTV's player: their cards get a "Player ✓" badge. */
     val playerHosts: Set<String> = emptySet(),
     /** Rewind in the built-in player (Select+L2, remote Rewind); off by default, it costs memory. */
-    val rewind: Boolean = false
+    val rewind: Boolean = false,
+    /** Default display filter ([com.aiconsole.retrotv.player.Filters] id); each game can override it. */
+    val filter: String = "disabled",
+    val sharpPixels: Boolean = false
 )
 
 /** Overrides one site (by host) can have; null means "use the global setting". */
@@ -119,7 +122,9 @@ class Settings(context: Context) {
             sandboxApps = prefs.getBoolean("sandboxApps", d.sandboxApps),
             builtInPlayer = prefs.getBoolean("builtInPlayer", d.builtInPlayer),
             playerHosts = prefs.getStringSet("playerHosts", d.playerHosts).orEmpty().toSet(),
-            rewind = prefs.getBoolean("rewind", d.rewind)
+            rewind = prefs.getBoolean("rewind", d.rewind),
+            filter = prefs.getString("filter", d.filter) ?: d.filter,
+            sharpPixels = prefs.getBoolean("sharpPixels", d.sharpPixels)
         )
     }
 
@@ -153,6 +158,8 @@ class Settings(context: Context) {
         putBoolean("builtInPlayer", p.builtInPlayer)
         putStringSet("playerHosts", p.playerHosts)
         putBoolean("rewind", p.rewind)
+        putString("filter", p.filter)
+        putBoolean("sharpPixels", p.sharpPixels)
         putInt("version", 2)
     }
 

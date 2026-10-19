@@ -25,5 +25,7 @@ html, body {
   font-size: 18px;
   z-index: 9999;
 }
+/* Sharp pixels: no smoothing when the game is scaled up. */
+.sharp canvas { image-rendering: crisp-edges; image-rendering: pixelated; }
 /* The pointer is off while playing, so EmulatorJS's own touch overlay and start hint stay hidden. */
 .ejs_virtualGamepad_parent { display: none !important; }
