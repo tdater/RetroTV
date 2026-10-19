@@ -24,6 +24,8 @@ gh run view <run-id> --log-failed
 gh run download <run-id> -n app-debug -D "$env:USERPROFILE\Downloads\RetroTV-<run-id>"
 ```
 
+The `/android-finish` skill walks through the whole loop.
+
 Toolchain: AGP 9.x with built-in Kotlin, Compose BOM, androidx.webkit. minSdk 24, target/compile 37. Single `:app` module, package `com.aiconsole.retrotv`.
 
 Releases: a `v*` tag builds the signed APK (keystore and passwords in `../RetroTV-signing`, outside git; never commit or print them) and publishes it to the public `tdater/RetroTV-releases` (GitHub Pages features page at https://tdater.github.io/RetroTV-releases/, cloned at `../RetroTV-releases`). Publishing uses the `RELEASES_TOKEN` secret (a fine-grained token with Contents write on RetroTV-releases; if publishing fails with a 401/403, it has probably expired). Update the features page with each release.
