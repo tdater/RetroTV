@@ -42,6 +42,7 @@ import kotlinx.coroutines.delay
 sealed interface PlayerPanel {
     data object Menu : PlayerPanel
     data object Players : PlayerPanel
+    data object Cheats : PlayerPanel
     data class Failed(val message: String) : PlayerPanel
 }
 
@@ -60,6 +61,7 @@ class PlayerUiState {
     var players by mutableStateOf(listOf<String?>(null, null, null, null))
     var claiming by mutableStateOf<Int?>(null)
     var filter by mutableStateOf("disabled")
+    var cheats by mutableStateOf(emptyList<Cheat>())
 }
 
 interface PlayerActions {
@@ -72,7 +74,12 @@ interface PlayerActions {
     fun toggleMute()
     fun emulatorMenu()
     fun openPlayers()
+    fun openMenu()
     fun cycleFilter()
+    fun openCheats()
+    fun toggleCheat(index: Int)
+    fun deleteCheat(index: Int)
+    fun addCheats(text: String): Int
     fun claimPlayer(slot: Int)
     fun buttonLayout()
     fun playOnSite()
@@ -101,6 +108,7 @@ fun PlayerOverlay(state: PlayerUiState, title: String, system: String, canPlayOn
             null -> Unit
             PlayerPanel.Menu -> MenuPanel(state, title, system, canPlayOnSite, actions)
             PlayerPanel.Players -> PlayersPanel(state, actions)
+            PlayerPanel.Cheats -> CheatsPanel(state.cheats, actions::toggleCheat, actions::deleteCheat, actions::addCheats) { actions.openMenu() }
             is PlayerPanel.Failed -> FailedPanel(p.message, canPlayOnSite, actions)
         }
     }
@@ -128,6 +136,7 @@ private fun MenuPanel(state: PlayerUiState, title: String, system: String, canPl
             MenuTile("⏩", if (state.fast) "Fast-forward: on" else "Fast-forward: off", actions::toggleFast, Modifier.weight(1f), selected = state.fast)
             MenuTile(if (state.muted) "🔇" else "🔊", if (state.muted) "Sound: off" else "Sound: on", actions::toggleMute, Modifier.weight(1f))
             MenuTile("🎮", "Players", actions::openPlayers, Modifier.weight(1f))
+            MenuTile("🧪", "Cheats" + state.cheats.count { it.on }.let { if (it > 0) " ($it on)" else "" }, actions::openCheats, Modifier.weight(1f))
             MenuTile("🕹", "Button layout", actions::buttonLayout, Modifier.weight(1f))
             MenuTile("🛠", "Emulator settings (pointer)", actions::emulatorMenu, Modifier.weight(1f))
             if (canPlayOnSite) MenuTile("🌐", "Play on the site instead", actions::playOnSite, Modifier.weight(1f))

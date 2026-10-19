@@ -186,6 +186,13 @@
     restart: function () { try { emu().gameManager.restart(); show('Restarted'); } catch (e) {} },
     pause: function (on) { try { var e = emu(); if (on) e.pause(); else e.play(); } catch (x) {} },
     fast: function (on) { try { var e = emu(); e.isFastForward = !!on; e.gameManager.toggleFastForward(on ? 1 : 0); } catch (x) {} },
+    cheats: function (list) {
+      try {
+        var gm = emu().gameManager;
+        gm.resetCheat();
+        (list || []).forEach(function (c, i) { if (c.on) gm.setCheat(i, 1, c.code); });
+      } catch (x) {}
+    },
     filter: function (name) { try { emu().changeSettingOption('shader', name); } catch (x) {} },
     rewind: function (on) {
       try { var e = emu(); if (e.rewindEnabled) e.gameManager.functions.toggleRewind(on ? 1 : 0); } catch (x) {}

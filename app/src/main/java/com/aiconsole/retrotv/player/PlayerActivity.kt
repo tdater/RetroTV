@@ -45,6 +45,7 @@ import com.aiconsole.retrotv.data.ACCENTS
 import com.aiconsole.retrotv.data.FreezeWatchdog
 import com.aiconsole.retrotv.ui.RetroTheme
 import com.aiconsole.retrotv.web.UserAgents
+import org.json.JSONArray
 import org.json.JSONObject
 import java.net.URLEncoder
 import java.util.Locale
@@ -194,6 +195,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         if (legacy) query["legacy"] = "1"
         if (app.settings.value.rewind) query["rewind"] = "1"
         ui.filter = gamePrefs.getString("filter_" + request.key, null) ?: app.settings.value.filter
+        ui.cheats = CheatRules.decode(gamePrefs.getString("cheats_" + request.key, "").orEmpty())
         if (ui.filter != "disabled") query["shader"] = ui.filter
         if (app.settings.value.sharpPixels) query["sharp"] = "1"
         if (threads) {
@@ -271,6 +273,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
                     when (ui.panel) {
                         is PlayerPanel.Failed -> exit()
                         PlayerPanel.Players -> { pads.claim(null); refreshPlayers(); show(PlayerPanel.Menu) }
+                        PlayerPanel.Cheats -> show(PlayerPanel.Menu)
                         else -> resume()
                     }
                 }
@@ -422,6 +425,34 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         js("filter('${ui.filter}')")
     }
 
+    override fun openMenu() = show(PlayerPanel.Menu)
+
+    override fun openCheats() = show(PlayerPanel.Cheats)
+
+    override fun toggleCheat(index: Int) = setCheats(ui.cheats.mapIndexed { i, c -> if (i == index) c.copy(on = !c.on) else c })
+
+    override fun deleteCheat(index: Int) = setCheats(ui.cheats.filterIndexed { i, _ -> i != index })
+
+    override fun addCheats(text: String): Int {
+        val found = CheatRules.parse(text).map { it.copy(on = true) }
+        if (found.isNotEmpty()) setCheats(ui.cheats + found)
+        return found.size
+    }
+
+    private fun setCheats(list: List<Cheat>) {
+        ui.cheats = list
+        gamePrefs.edit { putString("cheats_" + request.key, CheatRules.encode(list)) }
+        applyCheats()
+    }
+
+    /** Sends the cheat list to EmulatorJS (it resets and re-applies the ones that are on). */
+    private fun applyCheats() {
+        if (!ui.started) return
+        val arr = JSONArray()
+        ui.cheats.forEach { arr.put(JSONObject().put("code", it.code).put("on", it.on)) }
+        js("cheats($arr)")
+    }
+
     override fun openPlayers() {
         refreshPlayers()
         show(PlayerPanel.Players)
@@ -481,6 +512,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         @JavascriptInterface
         fun started() = handler.post {
             ui.started = true
+            if (ui.cheats.isNotEmpty()) applyCheats()
             if (ui.panel == null) toast("Back or Menu: game menu (save, load, exit)")
         }
 
