@@ -26,6 +26,8 @@ gh run download <run-id> -n app-debug -D "$env:USERPROFILE\Downloads\RetroTV-<ru
 
 Toolchain: AGP 9.x with built-in Kotlin, Compose BOM, androidx.webkit. minSdk 24, target/compile 37. Single `:app` module, package `com.aiconsole.retrotv`.
 
+Releases: a `v*` tag builds the signed APK (keystore and passwords in `../RetroTV-signing`, outside git; never commit or print them) and publishes it to the public `tdater/RetroTV-releases` (GitHub Pages features page at https://tdater.github.io/RetroTV-releases/, cloned at `../RetroTV-releases`). Publishing needs a `RELEASES_TOKEN` secret, which isn't set yet (2026-10-19), so v1.0 was built but never published; once the owner adds it, re-run the v1.0 tag's workflow run. Update the features page with each release.
+
 ## What this is
 
 An Android TV app that replaces installing emulators: a streamlined TV browser over in-browser retro game sites.
