@@ -195,7 +195,10 @@ class Downloads(private val context: Context) {
     }
 
     /** Saves bytes a page produced (blob: / data: downloads, e.g. emulator save states). */
-    fun saveBytes(name: String, mimeType: String, bytes: ByteArray): SavedFile {
+    fun saveBytes(name: String, mimeType: String, bytes: ByteArray): SavedFile = saveStream(name, mimeType) { it.write(bytes) }
+
+    /** Like [saveBytes], but [write] streams the content, so large files never sit in memory. */
+    fun saveStream(name: String, mimeType: String, write: (java.io.OutputStream) -> Unit): SavedFile {
         val safe = name.replace(Regex("[\\\\/:*?\"<>|]"), "_").ifBlank { "download" }
         val mime = mimeType.ifBlank {
             MimeTypeMap.getSingleton().getMimeTypeFromExtension(safe.substringAfterLast('.', "").lowercase()) ?: "application/octet-stream"
@@ -209,13 +212,13 @@ class Downloads(private val context: Context) {
             val resolver = context.contentResolver
             val target = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
                 ?: throw IllegalStateException("Couldn't create $safe in Downloads")
-            resolver.openOutputStream(target)?.use { it.write(bytes) }
+            resolver.openOutputStream(target)?.use(write) ?: throw IllegalStateException("Couldn't write $safe")
             target
         } else {
             val dir = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: File(context.filesDir, "downloads")
             dir.mkdirs()
             val file = File(dir, safe)
-            file.writeBytes(bytes)
+            file.outputStream().use(write)
             FileProvider.getUriForFile(context, "${context.packageName}.files", file)
         }
         val saved = SavedFile(safe, uri, mime)

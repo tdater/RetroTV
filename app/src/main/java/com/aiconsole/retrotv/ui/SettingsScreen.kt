@@ -34,6 +34,7 @@ import com.aiconsole.retrotv.RetroApp
 import com.aiconsole.retrotv.data.ACCENTS
 import com.aiconsole.retrotv.data.Backdrop
 import com.aiconsole.retrotv.data.Backup
+import com.aiconsole.retrotv.data.BackupArchive
 import com.aiconsole.retrotv.data.CardSize
 import com.aiconsole.retrotv.data.ControllerMode
 import com.aiconsole.retrotv.data.Prefs
@@ -67,8 +68,14 @@ fun SettingsScreen(onBack: () -> Unit, onNavigate: (Screen) -> Unit) {
         scope.launch {
             message = try {
                 val json = withContext(Dispatchers.IO) {
-                    context.contentResolver.openInputStream(uri)?.use { it.readBytes().toString(Charsets.UTF_8) }
-                } ?: throw IllegalStateException("Couldn't read the file")
+                    context.contentResolver.openInputStream(uri)?.buffered()?.use { input ->
+                        // Backups are zips with the saves; older ones are plain JSON.
+                        input.mark(4)
+                        val head = ByteArray(4).also { input.read(it) }
+                        input.reset()
+                        if (BackupArchive.isZip(head)) BackupArchive.read(input, app.saves.root()) else input.readBytes().toString(Charsets.UTF_8)
+                    } ?: throw IllegalStateException("Couldn't read the file")
+                }
                 val restored = Backup.import(json, app.settings.value)
                 app.settings.update { restored.prefs }
                 AdBlock.setCustom(restored.prefs.customBlockList)
@@ -195,13 +202,13 @@ fun SettingsScreen(onBack: () -> Unit, onNavigate: (Screen) -> Unit) {
 
                 item { SectionTitle("Data") }
                 item {
-                    SettingRow("Back up settings and sites", "Export", {
+                    SettingRow("Back up settings, sites and saves", "Export", {
                         scope.launch {
                             message = try {
                                 val urls = app.userscripts.scripts.value.mapNotNull { it.sourceUrl }
                                 val json = Backup.export(app.settings.value, custom, urls)
                                 val file = withContext(Dispatchers.IO) {
-                                    app.downloads.saveBytes("retrotv-backup.json", "application/json", json.toByteArray())
+                                    app.downloads.saveStream("retrotv-backup.zip", "application/zip") { BackupArchive.write(it, json, app.saves.root()) }
                                 }
                                 "Saved ${file.name} to ${app.downloads.folderLabel}"
                             } catch (e: CancellationException) {
@@ -215,7 +222,7 @@ fun SettingsScreen(onBack: () -> Unit, onNavigate: (Screen) -> Unit) {
                 item {
                     SettingRow("Restore a backup", "Import", {
                         try {
-                            importer.launch(arrayOf("application/json", "text/plain", "*/*"))
+                            importer.launch(arrayOf("application/zip", "application/json", "text/plain", "*/*"))
                         } catch (_: Exception) {
                             message = "This TV has no file picker; copy the backup with a file manager app"
                         }
