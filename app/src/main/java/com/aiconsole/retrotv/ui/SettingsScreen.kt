@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -21,6 +22,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -47,6 +49,7 @@ import com.aiconsole.retrotv.data.Prefs
 import com.aiconsole.retrotv.data.UrlInput
 import com.aiconsole.retrotv.data.ViewMode
 import com.aiconsole.retrotv.data.WindowMode
+import com.aiconsole.retrotv.player.Systems
 import com.aiconsole.retrotv.web.AdBlock
 import com.aiconsole.retrotv.web.Gamepad
 import kotlinx.coroutines.CancellationException
@@ -66,6 +69,9 @@ fun SettingsScreen(onBack: () -> Unit, onNavigate: (Screen) -> Unit) {
     var message by remember { mutableStateOf("") }
     var editing by remember { mutableStateOf<Edit?>(null) }
     var showMapping by remember { mutableStateOf(false) }
+    var showOffline by remember { mutableStateOf(false) }
+    var offlineBusy by remember { mutableStateOf(false) }
+    var offlineVersion by remember { mutableIntStateOf(0) }
     var report by remember { mutableStateOf<Pair<File, String?>?>(null) }
     val reportShare = remember { ReportShare(context, scope) }
     DisposableEffect(Unit) { onDispose { reportShare.stop() } }
@@ -138,6 +144,34 @@ fun SettingsScreen(onBack: () -> Unit, onNavigate: (Screen) -> Unit) {
                     }, subtitle = "Games played in RetroTV's player are kept so they start instantly and offline (up to 1.5 GB)")
                 }
                 item { SettingRow("Clear recent games", "", { app.library.clear(); message = "Recent games cleared" }) }
+                item {
+                    SettingRow("Play without internet", if (showOffline) "Hide" else "Choose consoles", { showOffline = !showOffline },
+                        subtitle = "Download a console's emulator now so its games start even when the internet is down")
+                }
+                if (showOffline) {
+                    items(Systems.ALL, key = { "offline-" + it.id }) { system ->
+                        var ready by remember(offlineVersion) { mutableStateOf(app.games.isOffline(system.id)) }
+                        SettingRow(system.label, if (ready) "Ready offline ✓" else "Download", {
+                            if (ready || offlineBusy) return@SettingRow
+                            offlineBusy = true
+                            scope.launch {
+                                val ok = withContext(Dispatchers.IO) {
+                                    app.games.prefetch(system.id) { done, total -> message = "${system.label}: downloading $done of $total" }
+                                }
+                                ready = ok
+                                offlineBusy = false
+                                message = if (ok) "${system.label} is ready to play offline" else "${system.label}: download failed, check the internet connection"
+                            }
+                        })
+                    }
+                    item {
+                        SettingRow("Delete emulator files", "%.0f MB".format(Locale.US, app.games.emulatorSize() / 1e6), {
+                            app.games.clearEmulators()
+                            offlineVersion++
+                            message = "Emulator files deleted; they download again when a game starts"
+                        })
+                    }
+                }
 
                 item { SectionTitle("Browser") }
                 item {

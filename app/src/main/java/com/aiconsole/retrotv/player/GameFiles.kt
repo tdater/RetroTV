@@ -34,7 +34,11 @@ class GameFiles(context: Context) {
 
     private val appContext = context.applicationContext
     private val romDir = File(context.filesDir, "games").apply { mkdirs() }
-    private val ejsDir = File(context.cacheDir, "emulatorjs")
+    // Emulator files live in filesDir (cacheDir can be purged by Android), so played consoles keep working offline.
+    private val ejsDir = File(context.filesDir, "emulatorjs").also { dir ->
+        val old = File(context.cacheDir, "emulatorjs")
+        if (old.isDirectory && !dir.exists()) old.renameTo(dir)
+    }
     private val saveDir = SaveStore.rootDir(context.filesDir)
 
     private sealed interface Source {
@@ -297,9 +301,41 @@ class GameFiles(context: Context) {
 
     fun cacheSize(): Long = romDir.listFiles()?.sumOf { it.length() } ?: 0L
 
+    /** Deletes cached game files (not the user's own ROMs, and not the emulators: see [clearEmulators]). */
     fun clearCache() {
         romDir.listFiles()?.forEach { if (!it.name.startsWith("own_")) it.delete() }
+    }
+
+    fun clearEmulators() {
         ejsDir.deleteRecursively()
+    }
+
+    fun emulatorSize(): Long = ejsDir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
+
+    private fun emulatorFile(path: String) = File(ejsDir, "$EJS_VERSION/data/$path")
+
+    /** True when every required file for [core] is on the TV ([CoreFiles]). */
+    fun isOffline(core: String): Boolean = CoreFiles.forCore(core).all { CoreFiles.optional(it) || emulatorFile(it).length() > 0 }
+
+    /**
+     * Downloads what [core] needs to start without the internet. Finished files stay even when a
+     * later one fails. Returns false when a required file couldn't be fetched. Call off the main thread.
+     */
+    fun prefetch(core: String, onProgress: (done: Int, total: Int) -> Unit): Boolean {
+        val files = CoreFiles.forCore(core)
+        files.forEachIndexed { i, path ->
+            onProgress(i, files.size)
+            val target = emulatorFile(path)
+            if (target.length() > 0) return@forEachIndexed
+            target.parentFile?.mkdirs()
+            val response = download("$EJS_DATA$path", "", "", null, target, emptyMap())
+            val ok = response.statusCode == 200 && runCatching {
+                response.data.use { input -> val buf = ByteArray(64 * 1024); while (input.read(buf) >= 0) Unit }
+            }.isSuccess && target.length() > 0
+            if (!ok && !CoreFiles.optional(path)) return false
+        }
+        onProgress(files.size, files.size)
+        return true
     }
 
     private class SavingStream(input: InputStream, private val file: File, private val expected: Long, private val onEnd: (Boolean) -> Unit) :
