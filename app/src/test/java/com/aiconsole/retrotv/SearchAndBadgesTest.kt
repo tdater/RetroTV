@@ -31,6 +31,12 @@ class SearchAndBadgesTest {
         assertTrue(SiteSearch.url(site("webrcade"), "zelda #1", google).contains("%231"))
     }
 
+    @Test
+    fun oddUserAddressesDontCrash() {
+        val odd = com.aiconsole.retrotv.data.Site("u1", "Mine", "https://example.com/a b|c", "", 0xFF000000, builtIn = false)
+        assertTrue(SiteSearch.url(odd, "zelda", google).startsWith("https://www.google.com/search?q="))
+    }
+
     private fun played(page: String, at: Long) =
         RecentGame(GameRequest(core = "nes", game = "https://x/$at.zip", title = "Game $at", page = page), playedAt = at)
 
