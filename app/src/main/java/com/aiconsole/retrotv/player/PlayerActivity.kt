@@ -247,10 +247,25 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
             return true
         }
 
+        // Choosing a player: the Start press goes to VirtualPads even with a panel open.
+        if (pads.claiming != null && code == KeyEvent.KEYCODE_BUTTON_START && VirtualPads.isController(event)) {
+            if (down) {
+                val slot = pads.claiming ?: 0
+                pads.onKey(event)
+                refreshPlayers()
+                toast("That controller is now player ${slot + 1}")
+            }
+            return true
+        }
+
         if (ui.panel != null) {
             if (code == KeyEvent.KEYCODE_BACK || code == KeyEvent.KEYCODE_ESCAPE || code == KeyEvent.KEYCODE_BUTTON_B || isMenuKey(code)) {
                 if (!down) {
-                    if (ui.panel is PlayerPanel.Failed) exit() else resume()
+                    when (ui.panel) {
+                        is PlayerPanel.Failed -> exit()
+                        PlayerPanel.Players -> { pads.claim(null); refreshPlayers(); show(PlayerPanel.Menu) }
+                        else -> resume()
+                    }
                 }
                 return true
             }
@@ -357,6 +372,28 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
     override fun toggleMute() {
         ui.muted = !ui.muted
         js("mute(${ui.muted})")
+    }
+
+    override fun openPlayers() {
+        refreshPlayers()
+        show(PlayerPanel.Players)
+    }
+
+    override fun claimPlayer(slot: Int) {
+        pads.claim(slot)
+        refreshPlayers()
+    }
+
+    private fun refreshPlayers() {
+        ui.players = pads.players()
+        ui.claiming = pads.claiming
+    }
+
+    override fun buttonLayout() {
+        ui.panel = null
+        setPointer(true)
+        js("controls()")
+        toast("Pointer on: set each button, it's remembered for this game · Back to return to the game")
     }
 
     override fun emulatorMenu() {

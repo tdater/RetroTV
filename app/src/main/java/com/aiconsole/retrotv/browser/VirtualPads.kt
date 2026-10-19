@@ -99,8 +99,43 @@ class VirtualPads {
         else -> -1
     }
 
+    /** The player slot (0–3) the next controller to press Start will take, or null. */
+    @Volatile
+    var claiming: Int? = null
+        private set
+
+    fun claim(slot: Int?) {
+        claiming = slot?.takeIf { it in 0..3 }
+    }
+
+    /** Controller names by player slot (null = nobody). */
+    fun players(): List<String?> = synchronized(lock) { pads.map { it?.name } }
+
+    /** Moves [device] to [slot] ([PadSlots]); every button is released so nothing stays held across the swap. */
+    private fun assign(device: InputDevice?, slot: Int) {
+        val id = device?.id ?: return
+        pad(device) ?: return
+        synchronized(lock) {
+            val next = PadSlots.claim(slots, id, slot)
+            val moved = arrayOfNulls<Pad>(4)
+            next.forEach { (dev, s) -> slots[dev]?.let { old -> moved[s] = pads[old] } }
+            moved.forEach { p -> p?.buttons?.fill(0f); p?.axes?.fill(0f); p?.timestamp = System.nanoTime() }
+            slots.clear()
+            slots.putAll(next)
+            moved.copyInto(pads)
+        }
+    }
+
     /** Records a controller key. Returns false when it isn't a gamepad button. */
     fun onKey(event: KeyEvent): Boolean {
+        val target = claiming
+        if (target != null && event.keyCode == Gamepad.BUTTON_START) {
+            if (event.action == KeyEvent.ACTION_DOWN) {
+                assign(event.device, target)
+                claiming = null
+            }
+            return true
+        }
         val i = index(event.keyCode)
         if (i < 0) return false
         val p = pad(event.device) ?: return false

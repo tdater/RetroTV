@@ -41,6 +41,7 @@ import kotlinx.coroutines.delay
 
 sealed interface PlayerPanel {
     data object Menu : PlayerPanel
+    data object Players : PlayerPanel
     data class Failed(val message: String) : PlayerPanel
 }
 
@@ -56,6 +57,8 @@ class PlayerUiState {
     var pointer by mutableStateOf(false)
     var toast by mutableStateOf("")
     var toastId by mutableIntStateOf(0)
+    var players by mutableStateOf(listOf<String?>(null, null, null, null))
+    var claiming by mutableStateOf<Int?>(null)
 }
 
 interface PlayerActions {
@@ -67,6 +70,9 @@ interface PlayerActions {
     fun toggleFast()
     fun toggleMute()
     fun emulatorMenu()
+    fun openPlayers()
+    fun claimPlayer(slot: Int)
+    fun buttonLayout()
     fun playOnSite()
     fun retry()
     fun exit()
@@ -92,6 +98,7 @@ fun PlayerOverlay(state: PlayerUiState, title: String, system: String, canPlayOn
         when (val p = state.panel) {
             null -> Unit
             PlayerPanel.Menu -> MenuPanel(state, title, system, canPlayOnSite, actions)
+            PlayerPanel.Players -> PlayersPanel(state, actions)
             is PlayerPanel.Failed -> FailedPanel(p.message, canPlayOnSite, actions)
         }
     }
@@ -117,6 +124,8 @@ private fun MenuPanel(state: PlayerUiState, title: String, system: String, canPl
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             MenuTile("⏩", if (state.fast) "Fast-forward: on" else "Fast-forward: off", actions::toggleFast, Modifier.weight(1f), selected = state.fast)
             MenuTile(if (state.muted) "🔇" else "🔊", if (state.muted) "Sound: off" else "Sound: on", actions::toggleMute, Modifier.weight(1f))
+            MenuTile("🎮", "Players", actions::openPlayers, Modifier.weight(1f))
+            MenuTile("🕹", "Button layout", actions::buttonLayout, Modifier.weight(1f))
             MenuTile("🛠", "Emulator settings (pointer)", actions::emulatorMenu, Modifier.weight(1f))
             if (canPlayOnSite) MenuTile("🌐", "Play on the site instead", actions::playOnSite, Modifier.weight(1f))
             MenuTile("⏻", "Exit game", actions::exit, Modifier.weight(1f))
@@ -151,6 +160,27 @@ private fun SlotCard(n: Int, selected: Boolean, savedAt: Long?, thumb: ImageBitm
                 color = Color.White, fontSize = 13.sp, maxLines = 1, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal
             )
         }
+    }
+}
+
+/** Which controller is which player: pick a row, then press Start on the controller that should be it. */
+@Composable
+private fun PlayersPanel(state: PlayerUiState, actions: PlayerActions) {
+    val first = remember { FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { first.requestFocus() } }
+    OverlayPanel("Players", Modifier.fillMaxSize(), widthFraction = 0.6f) {
+        Text("Choose a player, then press Start on the controller that should be that player. Players swap places.", color = TextDim, fontSize = 14.sp)
+        state.players.forEachIndexed { i, name ->
+            val waiting = state.claiming == i
+            TvButton(
+                "Player ${i + 1}: " + if (waiting) "press Start on a controller…" else name ?: "nobody",
+                { actions.claimPlayer(i) },
+                if (i == 0) Modifier.focusRequester(first) else Modifier,
+                icon = if (waiting) "⏳" else "🎮",
+                selected = waiting
+            )
+        }
+        Text("Back returns to the game menu.", color = TextDim, fontSize = 13.sp)
     }
 }
 

@@ -178,6 +178,8 @@
     mute: function (on) { try { var e = emu(); e.muted = !!on; e.setVolume(on ? 0 : e.volume); } catch (x) {} },
     flush: function () { try { emu().gameManager.saveSaveFiles(); } catch (e) {} },
     menu: function () { try { emu().menu.open(true); } catch (e) {} },
+    // EmulatorJS's own button-layout screen; it saves the layout per game.
+    controls: function () { try { emu().controlMenu.style.display = ''; } catch (e) {} },
     hideMenu: function () { try { emu().menu.close(); } catch (e) {} },
     migrate: migrate,
     note: show
