@@ -137,6 +137,8 @@ private fun MenuPanel(state: PlayerUiState, title: String, system: String, canPl
             MenuTile(if (state.muted) "🔇" else "🔊", if (state.muted) "Sound: off" else "Sound: on", actions::toggleMute, Modifier.weight(1f))
             MenuTile("🎮", "Players", actions::openPlayers, Modifier.weight(1f))
             MenuTile("🧪", "Cheats" + state.cheats.count { it.on }.let { if (it > 0) " ($it on)" else "" }, actions::openCheats, Modifier.weight(1f))
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             MenuTile("🕹", "Button layout", actions::buttonLayout, Modifier.weight(1f))
             MenuTile("🛠", "Emulator settings (pointer)", actions::emulatorMenu, Modifier.weight(1f))
             if (canPlayOnSite) MenuTile("🌐", "Play on the site instead", actions::playOnSite, Modifier.weight(1f))
