@@ -2,6 +2,7 @@ package com.aiconsole.retrotv.browser
 
 import android.os.SystemClock
 import android.webkit.JavascriptInterface
+import com.aiconsole.retrotv.data.UrlInput
 import com.aiconsole.retrotv.player.GameRequest
 import com.aiconsole.retrotv.player.PlayerActivity
 import kotlinx.coroutines.launch
@@ -68,6 +69,9 @@ internal fun BrowserActivity.launchGame(json: String) {
     )
     releaseKeys()
     show(null)
+    UrlInput.host(request.page)?.let { host ->
+        if (host !in settings.value.playerHosts) settings.update { it.copy(playerHosts = it.playerHosts + host) }
+    }
     try {
         player.launch(PlayerActivity.intent(this, request))
     } catch (e: Exception) {

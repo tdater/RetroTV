@@ -51,7 +51,9 @@ data class Prefs(
     val autoFullscreenGames: Boolean = false,
     val sandboxApps: Boolean = true,
     /** Games on EmulatorJS sites open in RetroTV's own player. */
-    val builtInPlayer: Boolean = true
+    val builtInPlayer: Boolean = true,
+    /** Sites (hosts) whose games have opened in RetroTV's player: their cards get a "Player ✓" badge. */
+    val playerHosts: Set<String> = emptySet()
 )
 
 /** Overrides one site (by host) can have; null means "use the global setting". */
@@ -113,7 +115,8 @@ class Settings(context: Context) {
             userscripts = prefs.getBoolean("userscripts", d.userscripts),
             autoFullscreenGames = prefs.getBoolean("autoFullscreenGames", d.autoFullscreenGames),
             sandboxApps = prefs.getBoolean("sandboxApps", d.sandboxApps),
-            builtInPlayer = prefs.getBoolean("builtInPlayer", d.builtInPlayer)
+            builtInPlayer = prefs.getBoolean("builtInPlayer", d.builtInPlayer),
+            playerHosts = prefs.getStringSet("playerHosts", d.playerHosts).orEmpty().toSet()
         )
     }
 
@@ -145,6 +148,7 @@ class Settings(context: Context) {
         putBoolean("autoFullscreenGames", p.autoFullscreenGames)
         putBoolean("sandboxApps", p.sandboxApps)
         putBoolean("builtInPlayer", p.builtInPlayer)
+        putStringSet("playerHosts", p.playerHosts)
         putInt("version", 2)
     }
 

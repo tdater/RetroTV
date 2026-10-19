@@ -48,6 +48,7 @@ import com.aiconsole.retrotv.apps.SiteApps
 import com.aiconsole.retrotv.browser.BrowserActivity
 import com.aiconsole.retrotv.data.ControllerMode
 import com.aiconsole.retrotv.data.Site
+import com.aiconsole.retrotv.data.SiteBadges
 import com.aiconsole.retrotv.data.UrlInput
 import com.aiconsole.retrotv.data.ViewMode
 import kotlinx.coroutines.delay
@@ -130,6 +131,8 @@ fun HomeScreen(onNavigate: (Screen) -> Unit, onOpen: (Site) -> Unit, onOpenUrl: 
                 val index = shown.indexOf(site)
                 SiteCard(
                     site = site,
+                    lastGame = SiteBadges.lastGame(site.host, games)?.request?.displayTitle,
+                    player = SiteBadges.usesPlayer(site.host, prefs.playerHosts),
                     favorite = site.id in prefs.favorites,
                     installed = remember(site.id, refresh) { SiteApps.isInstalled(context, site) },
                     showDescription = prefs.showDescriptions,
@@ -220,6 +223,7 @@ private fun Header(showClock: Boolean, onNavigate: (Screen) -> Unit, onGo: () ->
         LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             item { TvButton("Go to a site", onGo, icon = "🔍") }
             item { TvButton("My games", { onNavigate(Screen.Library) }, icon = "🕹") }
+            item { TvButton("Search all sites", { onNavigate(Screen.Search) }, icon = "🔎") }
             item { TvButton("Play a ROM file", onPlayRom, icon = "🎮") }
             item { TvButton("Emulators & downloads", { onNavigate(Screen.Downloads) }, icon = "⬇") }
             item { TvButton("Scripts", { onNavigate(Screen.Scripts) }, icon = "📜") }
@@ -232,6 +236,8 @@ private fun Header(showClock: Boolean, onNavigate: (Screen) -> Unit, onGo: () ->
 @Composable
 private fun SiteCard(
     site: Site,
+    lastGame: String?,
+    player: Boolean,
     favorite: Boolean,
     installed: Boolean,
     showDescription: Boolean,
@@ -271,10 +277,13 @@ private fun SiteCard(
             if (favorite) Pill("★", Color(0xFFFFD23F))
             if (installed) Pill("App", Color(0xFF3DDC84))
             if (!site.builtIn) Pill("Mine", Color.White)
+            if (player) Pill("Player ✓", Color(0xFF22D3EE))
         }
         Column(Modifier.padding(14.dp)) {
             Text(site.name, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            if (showDescription || focused) {
+            if (lastGame != null) {
+                Text("Last played: $lastGame", color = Color.White.copy(alpha = 0.9f), fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            } else if (showDescription || focused) {
                 Text(site.description, color = Color.White.copy(alpha = 0.85f), fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
         }
