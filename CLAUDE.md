@@ -57,6 +57,8 @@ An Android TV app that replaces installing emulators: a streamlined TV browser o
 - **Site apps (`apps/SiteApps.kt`)**: each built-in site has a disabled `activity-alias` (own label + `drawable-xhdpi/banner_<id>.png`) → `SiteAppActivity` trampoline → standalone browser task (`FLAG_ACTIVITY_NEW_DOCUMENT`) with its own WebView profile (`sandboxApps`, MULTI_PROFILE). Other sites use pinned shortcuts. **Adding a built-in site needs a matching alias, string and banner** (banners are generated PNGs).
 - **Emulators (`downloads/Emulators.kt`)**: APK sources resolved at tap time (GitHub latest release with `pickApk`, scrape, direct, or website).
 
+- **Big-screen UI (Phase 5)**: attract mode (`ui/AttractMode.kt`, `AttractRules`; `MainActivity` tracks idle input on the home screen, the key that ends it is swallowed; uses `ArtKind.Snap` screenshots), first-run setup (`ui/SetupScreen.kt`, `Prefs.setupDone`, true for installs that already had settings), readability (`Readability`: `Prefs.textSize` scales fonts in `RetroTheme`, `Prefs.boldFocus` → `LocalBoldFocus` → `TvClickable` border).
+
 ## Conventions
 
 - Problem reports (ported from KITT): `ProblemReport` (crash handler, `redact()` strips URL queries/tokens/cookies from everything written), `FreezeWatchdog` (main-thread stalls; `FreezeWatchdog.context` = what's on screen), `RendererWatch` (stops a hung page's renderer), `ReportShare` + `QrCode` (Settings ▸ Report a problem: QR to a 10-minute one-file server, or the share sheet).

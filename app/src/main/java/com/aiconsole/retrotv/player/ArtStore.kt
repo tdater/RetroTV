@@ -13,6 +13,9 @@ import java.net.URLEncoder
 import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
 
+/** Which libretro picture: the box, or an in-game screenshot (the attract mode). */
+enum class ArtKind(val folder: String) { Box("Named_Boxarts"), Snap("Named_Snaps") }
+
 /**
  * Box art from libretro's thumbnail server ([ArtNames]), cached under `filesDir/art/`. Each
  * console's list of names is downloaded once (refreshed monthly). A title with no match is
@@ -25,26 +28,28 @@ class ArtStore(context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences("art", Context.MODE_PRIVATE)
     private val locks = ConcurrentHashMap<String, Mutex>()
 
-    private fun key(folder: String, title: String) = sha1(folder + "|" + ArtNames.normalize(title)).take(24)
+    // Box art keeps its original key; screenshots get their own.
+    private fun key(folder: String, title: String, kind: ArtKind) =
+        sha1(folder + "|" + ArtNames.normalize(title) + (if (kind == ArtKind.Box) "" else "|" + kind.name)).take(24)
 
-    private fun file(folder: String, title: String) = File(dir, key(folder, title) + ".png")
+    private fun file(folder: String, title: String, kind: ArtKind) = File(dir, key(folder, title, kind) + ".png")
 
     /** The art already on the TV, without touching the network. */
-    fun cached(core: String, title: String): File? {
+    fun cached(core: String, title: String, kind: ArtKind = ArtKind.Box): File? {
         val folder = ArtNames.folder(core) ?: return null
-        return file(folder, title).takeIf { it.length() > 0 }
+        return file(folder, title, kind).takeIf { it.length() > 0 }
     }
 
     /** The art for a game, downloading it when needed; null when there is none. */
-    suspend fun art(core: String, title: String): File? = withContext(Dispatchers.IO) {
+    suspend fun art(core: String, title: String, kind: ArtKind = ArtKind.Box): File? = withContext(Dispatchers.IO) {
         val folder = ArtNames.folder(core) ?: return@withContext null
-        val target = file(folder, title)
+        val target = file(folder, title, kind)
         if (target.length() > 0) return@withContext target
-        val miss = "miss_" + key(folder, title)
+        val miss = "miss_" + key(folder, title, kind)
         if (System.currentTimeMillis() < prefs.getLong(miss, 0)) return@withContext null
-        val names = listing(folder) ?: return@withContext remember(miss, HOUR)
+        val names = listing(folder, kind) ?: return@withContext remember(miss, HOUR)
         val name = ArtNames.best(title, names) ?: return@withContext remember(miss, MONTH)
-        val bytes = get("$BASE/${encode(folder)}/Named_Boxarts/${encode(name)}.png") ?: return@withContext remember(miss, HOUR)
+        val bytes = get("$BASE/${encode(folder)}/${kind.folder}/${encode(name)}.png") ?: return@withContext remember(miss, HOUR)
         val part = File(dir, target.name + ".part")
         runCatching { part.writeBytes(bytes) }
         if (part.renameTo(target)) target else remember(miss, HOUR).also { part.delete() }
@@ -55,10 +60,11 @@ class ArtStore(context: Context) {
         return null
     }
 
-    private suspend fun listing(folder: String): List<String>? = locks.getOrPut(folder) { Mutex() }.withLock {
-        val file = File(lists, folder.replace(Regex("[^A-Za-z0-9 -]"), "_") + ".txt")
+    private suspend fun listing(folder: String, kind: ArtKind): List<String>? = locks.getOrPut(folder + kind.name) { Mutex() }.withLock {
+        val suffix = if (kind == ArtKind.Box) "" else "_" + kind.name
+        val file = File(lists, folder.replace(Regex("[^A-Za-z0-9 -]"), "_") + suffix + ".txt")
         if (file.isFile && System.currentTimeMillis() - file.lastModified() < MONTH) return@withLock read(file)
-        val names = get("$BASE/${encode(folder)}/Named_Boxarts/")?.toString(Charsets.UTF_8)?.let { ArtNames.parseListing(it) }
+        val names = get("$BASE/${encode(folder)}/${kind.folder}/")?.toString(Charsets.UTF_8)?.let { ArtNames.parseListing(it) }
         when {
             !names.isNullOrEmpty() -> names.also { runCatching { file.writeText(it.joinToString("\n")) } }
             file.isFile -> read(file) // Stale but usable while the server is unreachable.

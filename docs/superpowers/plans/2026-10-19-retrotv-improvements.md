@@ -24,6 +24,8 @@
 
 ## Roadmap
 
+Status 2026-10-19: phases 1-4 merged to main (each CI-green); phase 5 written on `claude/tv-ui` but not yet built: GitHub Actions stopped starting jobs (account billing/spending limit).
+
 | Phase | Branch | Items | Depends on |
 |---|---|---|---|
 | 1. Stability | `claude/stability` | 1 saves as files + backup, 2 crash/freeze reports, 3 offline cores, 4 split `BrowserActivity`, 5 tests | none |

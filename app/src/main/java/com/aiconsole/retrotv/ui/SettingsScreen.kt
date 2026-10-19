@@ -125,6 +125,15 @@ fun SettingsScreen(onBack: () -> Unit, onNavigate: (Screen) -> Unit) {
                 item { ToggleRow("Show site descriptions", prefs.showDescriptions, { v -> set { it.copy(showDescriptions = v) } }) }
                 item { ToggleRow("Show clock", prefs.showClock, { v -> set { it.copy(showClock = v) } }) }
                 item {
+                    ChoiceRow("Text size", listOf(0, 1, 2), prefs.textSize, { Readability.LABELS[it] }, { v -> set { it.copy(textSize = v) } },
+                        subtitle = "Larger text everywhere, for big rooms or small TVs")
+                }
+                item { ToggleRow("Bold focus outline", prefs.boldFocus, { v -> set { it.copy(boldFocus = v) } }, subtitle = "A thicker outline shows what's selected") }
+                item {
+                    ChoiceRow("Attract mode", listOf(0, 1, 2, 5, 10), prefs.attractAfterMin, { if (it == 0) "Off" else "After $it min idle" },
+                        { v -> set { it.copy(attractAfterMin = v) } }, subtitle = "A slideshow of your games when the home screen sits unused; any button ends it")
+                }
+                item {
                     ChoiceRow(
                         "Screen edge margin", listOf(0, 8, 16, 24, 32, 48, 64), prefs.overscanDp, { "$it dp" },
                         { v -> set { it.copy(overscanDp = v) } }, subtitle = "Raise it if the edges are cut off on your TV (overscan)"
@@ -316,6 +325,7 @@ fun SettingsScreen(onBack: () -> Unit, onNavigate: (Screen) -> Unit) {
                         message = "Cache cleared"
                     })
                 }
+                item { SettingRow("Run the first-time setup again", "", { onNavigate(Screen.Setup) }) }
                 item { SettingRow("Reset all settings", "", { app.settings.reset(); message = "Settings reset" }) }
 
                 item { SectionTitle("About") }

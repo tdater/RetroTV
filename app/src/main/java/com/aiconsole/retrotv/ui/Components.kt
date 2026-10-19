@@ -104,7 +104,7 @@ fun TvClickable(
                 }
             }
             .background(if (focused) focusedBackground else background, shape)
-            .border(if (focused) 3.dp else 1.dp, if (focused) accent else Color.White.copy(alpha = 0.06f), shape)
+            .border(if (focused) Readability.focusBorder(LocalBoldFocus.current).dp else 1.dp, if (focused) accent else Color.White.copy(alpha = 0.06f), shape)
             .combinedClickable(
                 interactionSource = interaction,
                 indication = null,

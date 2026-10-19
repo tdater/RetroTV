@@ -58,7 +58,14 @@ data class Prefs(
     val rewind: Boolean = false,
     /** Default display filter ([com.aiconsole.retrotv.player.Filters] id); each game can override it. */
     val filter: String = "disabled",
-    val sharpPixels: Boolean = false
+    val sharpPixels: Boolean = false,
+    /** Minutes idle on the home screen before the attract mode; 0 = off. */
+    val attractAfterMin: Int = 2,
+    /** First-run setup finished (true for installs from before it existed). */
+    val setupDone: Boolean = false,
+    /** Text size: 0 Normal, 1 Large, 2 Extra large ([com.aiconsole.retrotv.ui.Readability]). */
+    val textSize: Int = 0,
+    val boldFocus: Boolean = false
 )
 
 /** Overrides one site (by host) can have; null means "use the global setting". */
@@ -124,7 +131,12 @@ class Settings(context: Context) {
             playerHosts = prefs.getStringSet("playerHosts", d.playerHosts).orEmpty().toSet(),
             rewind = prefs.getBoolean("rewind", d.rewind),
             filter = prefs.getString("filter", d.filter) ?: d.filter,
-            sharpPixels = prefs.getBoolean("sharpPixels", d.sharpPixels)
+            sharpPixels = prefs.getBoolean("sharpPixels", d.sharpPixels),
+            attractAfterMin = prefs.getInt("attractAfterMin", d.attractAfterMin),
+            // Settings saved before the setup existed mean this TV is already set up.
+            setupDone = prefs.getBoolean("setupDone", prefs.contains("accent")),
+            textSize = prefs.getInt("textSize", d.textSize).coerceIn(0, 2),
+            boldFocus = prefs.getBoolean("boldFocus", d.boldFocus)
         )
     }
 
@@ -160,6 +172,10 @@ class Settings(context: Context) {
         putBoolean("rewind", p.rewind)
         putString("filter", p.filter)
         putBoolean("sharpPixels", p.sharpPixels)
+        putInt("attractAfterMin", p.attractAfterMin)
+        putBoolean("setupDone", p.setupDone)
+        putInt("textSize", p.textSize)
+        putBoolean("boldFocus", p.boldFocus)
         putInt("version", 2)
     }
 

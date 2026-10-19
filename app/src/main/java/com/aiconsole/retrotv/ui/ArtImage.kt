@@ -25,6 +25,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.aiconsole.retrotv.RetroApp
+import com.aiconsole.retrotv.player.ArtKind
 import com.aiconsole.retrotv.player.Systems
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -45,10 +46,10 @@ private object ArtMemory {
 
 /** A game's box art ([com.aiconsole.retrotv.player.ArtStore]), or a console-coloured placeholder when there is none. */
 @Composable
-fun ArtImage(core: String, title: String, modifier: Modifier = Modifier, fallbackColor: Color = Color(0xFF2A2340)) {
+fun ArtImage(core: String, title: String, modifier: Modifier = Modifier, fallbackColor: Color = Color(0xFF2A2340), kind: ArtKind = ArtKind.Box) {
     val app = RetroApp.from(LocalContext.current)
-    val bitmap by produceState<ImageBitmap?>(null, core, title) {
-        value = withContext(Dispatchers.IO) { (app.art.cached(core, title) ?: app.art.art(core, title))?.let { ArtMemory.load(it) } }
+    val bitmap by produceState<ImageBitmap?>(null, core, title, kind) {
+        value = withContext(Dispatchers.IO) { (app.art.cached(core, title, kind) ?: app.art.art(core, title, kind))?.let { ArtMemory.load(it) } }
     }
     Box(modifier.background(Brush.verticalGradient(listOf(fallbackColor, Color.Black)), RoundedCornerShape(10.dp)), contentAlignment = Alignment.Center) {
         val b = bitmap

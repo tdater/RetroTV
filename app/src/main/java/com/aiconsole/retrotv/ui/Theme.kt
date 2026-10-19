@@ -7,11 +7,15 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
 import com.aiconsole.retrotv.data.ACCENTS
 import com.aiconsole.retrotv.data.Backdrop
 import com.aiconsole.retrotv.data.Prefs
@@ -26,21 +30,30 @@ fun accentOf(prefs: Prefs): Color = Color(ACCENTS[prefs.accent.coerceIn(0, ACCEN
 @Composable
 fun RetroTheme(prefs: Prefs, content: @Composable () -> Unit) {
     val accent = accentOf(prefs)
-    MaterialTheme(
-        colorScheme = darkColorScheme(
-            primary = accent,
-            onPrimary = Color.Black,
-            secondary = accent,
-            background = Ink,
-            surface = Panel,
-            surfaceVariant = PanelHigh,
-            onSurface = Color.White,
-            onBackground = Color.White,
-            onSurfaceVariant = TextDim
-        ),
-        content = content
-    )
+    val density = LocalDensity.current
+    CompositionLocalProvider(
+        LocalDensity provides Density(density.density, density.fontScale * Readability.fontScale(prefs.textSize)),
+        LocalBoldFocus provides prefs.boldFocus
+    ) {
+        MaterialTheme(
+            colorScheme = darkColorScheme(
+                primary = accent,
+                onPrimary = Color.Black,
+                secondary = accent,
+                background = Ink,
+                surface = Panel,
+                surfaceVariant = PanelHigh,
+                onSurface = Color.White,
+                onBackground = Color.White,
+                onSurfaceVariant = TextDim
+            ),
+            content = content
+        )
+    }
 }
+
+/** Thicker focus outlines (Settings: Bold focus), read by [TvClickable]. */
+val LocalBoldFocus = staticCompositionLocalOf { false }
 
 /** The home screen backdrop chosen in Settings → Appearance. */
 @Composable
