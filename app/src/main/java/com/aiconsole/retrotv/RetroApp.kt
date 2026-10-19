@@ -6,6 +6,7 @@ import com.aiconsole.retrotv.data.FreezeWatchdog
 import com.aiconsole.retrotv.data.History
 import com.aiconsole.retrotv.data.ProblemReport
 import com.aiconsole.retrotv.data.Settings
+import com.aiconsole.retrotv.data.SiteChecker
 import com.aiconsole.retrotv.data.SiteStore
 import com.aiconsole.retrotv.downloads.Downloads
 import com.aiconsole.retrotv.player.ArtStore
@@ -27,6 +28,7 @@ class RetroApp : Application() {
     val library by lazy { GameLibrary(this) }
     val saves by lazy { SaveStore(this) }
     val art by lazy { ArtStore(this) }
+    val health by lazy { SiteChecker(this) }
 
     override fun onCreate() {
         super.onCreate()

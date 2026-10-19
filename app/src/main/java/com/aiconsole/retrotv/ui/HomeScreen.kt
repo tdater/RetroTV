@@ -47,6 +47,7 @@ import com.aiconsole.retrotv.RetroApp
 import com.aiconsole.retrotv.apps.SiteApps
 import com.aiconsole.retrotv.browser.BrowserActivity
 import com.aiconsole.retrotv.data.ControllerMode
+import com.aiconsole.retrotv.data.Health
 import com.aiconsole.retrotv.data.Site
 import com.aiconsole.retrotv.data.SiteBadges
 import com.aiconsole.retrotv.data.UrlInput
@@ -84,7 +85,9 @@ fun HomeScreen(onNavigate: (Screen) -> Unit, onOpen: (Site) -> Unit, onOpenUrl: 
         else -> visible.filter { filter in it.tags }
     }
 
+    val health by app.health.results.collectAsState()
     LaunchedEffect(Unit) { runCatching { firstCard.requestFocus() } }
+    LaunchedEffect(Unit) { if (app.health.isDue()) runCatching { app.health.checkAll(all) } }
 
     Box(Modifier.fillMaxSize()) {
         LazyVerticalGrid(
@@ -133,6 +136,7 @@ fun HomeScreen(onNavigate: (Screen) -> Unit, onOpen: (Site) -> Unit, onOpenUrl: 
                     site = site,
                     lastGame = SiteBadges.lastGame(site.host, games)?.request?.displayTitle,
                     player = SiteBadges.usesPlayer(site.host, prefs.playerHosts),
+                    health = health[site.host] ?: Health.Unknown,
                     favorite = site.id in prefs.favorites,
                     installed = remember(site.id, refresh) { SiteApps.isInstalled(context, site) },
                     showDescription = prefs.showDescriptions,
@@ -238,6 +242,7 @@ private fun SiteCard(
     site: Site,
     lastGame: String?,
     player: Boolean,
+    health: Health,
     favorite: Boolean,
     installed: Boolean,
     showDescription: Boolean,
@@ -278,6 +283,8 @@ private fun SiteCard(
             if (installed) Pill("App", Color(0xFF3DDC84))
             if (!site.builtIn) Pill("Mine", Color.White)
             if (player) Pill("Player ✓", Color(0xFF22D3EE))
+            if (health == Health.Slow) Pill("Slow", Color(0xFFFFB300))
+            if (health == Health.Down) Pill("Down?", Color(0xFFFF5252))
         }
         Column(Modifier.padding(14.dp)) {
             Text(site.name, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)

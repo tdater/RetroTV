@@ -44,6 +44,7 @@ import com.aiconsole.retrotv.data.ProblemReport
 import com.aiconsole.retrotv.data.ReportShare
 import java.io.File
 import com.aiconsole.retrotv.data.CardSize
+import com.aiconsole.retrotv.data.Health
 import com.aiconsole.retrotv.data.ControllerMode
 import com.aiconsole.retrotv.data.Prefs
 import com.aiconsole.retrotv.data.UrlInput
@@ -270,6 +271,16 @@ fun SettingsScreen(onBack: () -> Unit, onNavigate: (Screen) -> Unit) {
                             message = "This TV has no file picker; copy the backup with a file manager app"
                         }
                     })
+                }
+                item {
+                    SettingRow("Check the game sites now", "", {
+                        scope.launch {
+                            message = "Checking the sites…"
+                            app.health.checkAll(app.sites.all())
+                            val down = app.health.results.value.count { it.value == Health.Down }
+                            message = if (down == 0) "All sites answered" else "$down site(s) didn't answer; they're marked Down? on the home screen"
+                        }
+                    }, subtitle = "Also runs on its own every 6 hours; slow or unreachable sites get a badge")
                 }
                 item {
                     SettingRow("Show hidden sites", "${prefs.hiddenSites.size} hidden", { set { it.copy(hiddenSites = emptySet()) }; message = "All sites are visible again" })
