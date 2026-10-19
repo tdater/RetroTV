@@ -427,8 +427,8 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
     /** Save uploads from the player page (binder threads); only this game's key is accepted. */
     private inner class SavesBridge {
         @JavascriptInterface
-        fun open(key: String, slot: Int, size: Long): String =
-            if (key == request.key) app.saves.open(key, slot, size).orEmpty() else ""
+        fun open(key: String, slot: Int, size: Double): String =
+            if (key == request.key) app.saves.open(key, slot, size.toLong()).orEmpty() else ""
 
         @JavascriptInterface
         fun write(token: String, base64: String): Boolean = app.saves.write(token, base64)

@@ -157,6 +157,13 @@
       fetch('/save/' + dir + '/slot' + slot + '.state', { cache: 'no-store' })
         .then(function (r) { return r.ok ? r.arrayBuffer() : null; })
         .then(function (buf) {
+          // A save too large to move out of IndexedDB (see migrate) still loads from there.
+          if (buf && buf.byteLength) return buf;
+          if (!window.indexedDB) return null;
+          return store('readonly', function (s) { return s.get(key + '#' + slot); })
+            .then(function (v) { return v && v.data ? bytes(v.data) : null; }, function () { return null; });
+        })
+        .then(function (buf) {
           if (!buf || !buf.byteLength) { tell('loaded', slot, false, 'Slot ' + slot + ' is empty'); return; }
           e.gameManager.loadState(new Uint8Array(buf));
           show('Loaded slot ' + slot);
