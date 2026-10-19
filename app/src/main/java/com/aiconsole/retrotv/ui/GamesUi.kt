@@ -66,16 +66,10 @@ fun RecentGamesRow(games: List<RecentGame>, onRemove: (RecentGame) -> Unit) {
         SectionTitle("Recent games")
         LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             items(games.take(15), key = { it.request.key }) { g ->
-                TvClickable(onClick = { playRecent(context, g) }, onLongClick = { onRemove(g) }, modifier = Modifier.width(250.dp)) {
-                    Column(Modifier.padding(14.dp)) {
-                        Text("🎮  " + g.request.displayTitle, color = Color.White, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        val from = UrlInput.host(g.request.page)?.removePrefix("www.") ?: "your file"
-                        Text("${Systems.label(g.request.core)} · $from", color = TextDim, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
-                }
+                GameTile(g, { playRecent(context, g) }, { onRemove(g) }, Modifier.width(150.dp))
             }
         }
-        Text("Recent games open straight in RetroTV's player · hold OK to remove one", color = TextDim, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
+        Text("Recent games open straight in RetroTV's player · hold OK to remove one · My games has them all", color = TextDim, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
     }
 }
 

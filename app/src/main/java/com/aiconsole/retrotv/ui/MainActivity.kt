@@ -18,7 +18,7 @@ import com.aiconsole.retrotv.RetroApp
 import com.aiconsole.retrotv.browser.BrowserActivity
 import com.aiconsole.retrotv.data.Site
 
-enum class Screen { Home, Downloads, Scripts, Settings, History }
+enum class Screen { Home, Downloads, Scripts, Settings, History, Library }
 
 /** The RetroTV home: site grid plus the downloads, scripts, history and settings screens. */
 class MainActivity : ComponentActivity() {
@@ -51,6 +51,7 @@ class MainActivity : ComponentActivity() {
                             Screen.Scripts -> ScreenFrame("Userscripts", goHome) { ScriptsPanel(null, Modifier.fillMaxSize(), autoSearchSite = false) }
                             Screen.Settings -> SettingsScreen(onBack = goHome, onNavigate = { screen.value = it })
                             Screen.History -> HistoryScreen(onBack = goHome, onOpenUrl = ::openUrl)
+                            Screen.Library -> LibraryScreen(onBack = goHome)
                         }
                     }
                 }

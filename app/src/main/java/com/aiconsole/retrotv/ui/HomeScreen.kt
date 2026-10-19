@@ -219,6 +219,7 @@ private fun Header(showClock: Boolean, onNavigate: (Screen) -> Unit, onGo: () ->
         // Their own row: next to the logo and clock they ran out of room on a TV and were cut off.
         LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             item { TvButton("Go to a site", onGo, icon = "🔍") }
+            item { TvButton("My games", { onNavigate(Screen.Library) }, icon = "🕹") }
             item { TvButton("Play a ROM file", onPlayRom, icon = "🎮") }
             item { TvButton("Emulators & downloads", { onNavigate(Screen.Downloads) }, icon = "⬇") }
             item { TvButton("Scripts", { onNavigate(Screen.Scripts) }, icon = "📜") }
