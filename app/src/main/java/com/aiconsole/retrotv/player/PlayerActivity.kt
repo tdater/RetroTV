@@ -43,6 +43,7 @@ import com.aiconsole.retrotv.browser.RendererWatch
 import com.aiconsole.retrotv.browser.VirtualPads
 import com.aiconsole.retrotv.data.ACCENTS
 import com.aiconsole.retrotv.data.FreezeWatchdog
+import com.aiconsole.retrotv.link.PhonePads
 import com.aiconsole.retrotv.ui.RetroTheme
 import com.aiconsole.retrotv.web.UserAgents
 import org.json.JSONArray
@@ -580,12 +581,18 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
     override fun onResume() {
         super.onResume()
         resumedAt = SystemClock.elapsedRealtime()
+        PhonePads.target = pads
+        PhonePads.onMenu = { handler.post { if (ui.panel == null) show(PlayerPanel.Menu) else resume() } }
         webView?.onResume()
         hideSystemBars()
         (getSystemService(Context.INPUT_SERVICE) as InputManager).registerInputDeviceListener(inputListener, handler)
     }
 
     override fun onPause() {
+        if (PhonePads.target === pads) {
+            PhonePads.target = null
+            PhonePads.onMenu = null
+        }
         // Time on screen counts as play time (menus included); short visits don't.
         val played = SystemClock.elapsedRealtime() - resumedAt
         if (resumedAt > 0 && played >= 5_000) app.library.addPlayTime(request.key, played)

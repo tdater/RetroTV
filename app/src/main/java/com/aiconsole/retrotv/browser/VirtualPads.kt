@@ -36,6 +36,11 @@ class VirtualPads {
 
     private fun pad(device: InputDevice?, remote: Boolean = false): Pad? {
         val id = device?.id ?: return null
+        return padFor(id, if (remote) "TV remote" else device.name ?: "Controller", remote)
+    }
+
+    /** The pad for an input source (a real device id, or a phone's negative id), creating it in a free slot. */
+    private fun padFor(id: Int, name: String, remote: Boolean = false): Pad? {
         synchronized(lock) {
             slots[id]?.let { return pads[it] }
             // A real controller takes over from the remote standing in as player 1.
@@ -45,7 +50,7 @@ class VirtualPads {
             }
             val slot = (0 until 4).firstOrNull { s -> pads[s] == null } ?: return null
             slots[id] = slot
-            pads[slot] = Pad(if (remote) "TV remote" else device.name ?: "Controller", remote)
+            pads[slot] = Pad(name, remote)
             return pads[slot]
         }
     }
@@ -179,6 +184,27 @@ class VirtualPads {
             p.timestamp = System.nanoTime()
         }
         return true
+    }
+
+    /** A phone controller's button ([com.aiconsole.retrotv.link.PhonePads]); false when all 4 pads are taken. */
+    fun virtualKey(id: Int, name: String, button: Int, value: Float): Boolean {
+        if (button !in 0..16) return false
+        val p = padFor(id, name) ?: return false
+        synchronized(lock) {
+            p.buttons[button] = value
+            p.timestamp = System.nanoTime()
+        }
+        return true
+    }
+
+    /** A phone controller's stick, as the left stick. */
+    fun virtualAxes(id: Int, name: String, x: Float, y: Float) {
+        val p = padFor(id, name) ?: return
+        synchronized(lock) {
+            p.axes[0] = x
+            p.axes[1] = y
+            p.timestamp = System.nanoTime()
+        }
     }
 
     fun releaseAll() = synchronized(lock) {

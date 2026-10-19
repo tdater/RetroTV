@@ -119,6 +119,22 @@ class GameFiles(context: Context) {
         return "file:" + target.absolutePath
     }
 
+    /**
+     * Saves a ROM sent from the phone link: written as `.part` and kept only when all [size]
+     * bytes arrived. Returns its `file:` value. Call off the main thread.
+     */
+    fun receiveRom(input: InputStream, name: String, size: Long): String {
+        val target = File(romDir, "own_phone_" + System.currentTimeMillis().toString(36) + "_" + safeName(name))
+        val part = File(romDir, target.name + ".part")
+        val written = FileOutputStream(part).use { out -> input.copyTo(out) }
+        if (written != size || !part.renameTo(target)) {
+            part.delete()
+            throw IllegalStateException("The upload stopped before the whole file arrived")
+        }
+        trim()
+        return "file:" + target.absolutePath
+    }
+
     // ---- Files sent by a page (blob: game URLs), in base64 chunks ----
 
     fun blobOpen(name: String, size: Long): String? {

@@ -45,6 +45,7 @@ import com.aiconsole.retrotv.data.UrlInput
 import com.aiconsole.retrotv.data.WindowMode
 import com.aiconsole.retrotv.downloads.DownloadItem
 import com.aiconsole.retrotv.downloads.SavedFile
+import com.aiconsole.retrotv.link.PhonePads
 import com.aiconsole.retrotv.player.PlayerActivity
 import com.aiconsole.retrotv.ui.RetroTheme
 import com.aiconsole.retrotv.web.AdBlock
@@ -513,6 +514,8 @@ class BrowserActivity : ComponentActivity(), BrowserActions {
 
     override fun onResume() {
         super.onResume()
+        PhonePads.target = pads
+        PhonePads.onMenu = { handler.post { if (ui.panel == null) openMenu() else show(null) } }
         webView?.onResume()
         hideSystemBars()
         (getSystemService(Context.INPUT_SERVICE) as InputManager).registerInputDeviceListener(inputListener, handler)
@@ -520,6 +523,10 @@ class BrowserActivity : ComponentActivity(), BrowserActions {
     }
 
     override fun onPause() {
+        if (PhonePads.target === pads) {
+            PhonePads.target = null
+            PhonePads.onMenu = null
+        }
         handler.removeCallbacks(longPress)
         releaseKeys()
         (getSystemService(Context.INPUT_SERVICE) as InputManager).unregisterInputDeviceListener(inputListener)
