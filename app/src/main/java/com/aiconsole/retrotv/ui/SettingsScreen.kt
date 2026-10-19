@@ -277,6 +277,10 @@ fun SettingsScreen(onBack: () -> Unit, onNavigate: (Screen) -> Unit) {
                     })
                 }
                 item {
+                    SettingRow("Sync saves with another TV", "Open", { onNavigate(Screen.Sync) },
+                        subtitle = "Two RetroTVs on the same Wi-Fi swap saves; the newer one wins")
+                }
+                item {
                     SettingRow("Restore a backup", "Import", {
                         try {
                             importer.launch(arrayOf("application/zip", "application/json", "text/plain", "*/*"))

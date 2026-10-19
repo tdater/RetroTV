@@ -46,6 +46,8 @@ class LinkServer(context: Context) {
     /** The phone's address (`http://ip:port/token/`) while running, else null. */
     val url: StateFlow<String?> = _url.asStateFlow()
 
+    val port: Int get() = origin?.substringAfterLast(':')?.toIntOrNull() ?: 0
+
     /** Origin (`http://ip:port`) other RetroTVs use with the sync code. */
     @Volatile var origin: String? = null
         private set

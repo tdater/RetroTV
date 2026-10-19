@@ -10,6 +10,7 @@ import com.aiconsole.retrotv.data.SiteChecker
 import com.aiconsole.retrotv.data.SiteStore
 import com.aiconsole.retrotv.downloads.Downloads
 import com.aiconsole.retrotv.link.LinkServer
+import com.aiconsole.retrotv.link.SaveSync
 import com.aiconsole.retrotv.player.ArtStore
 import com.aiconsole.retrotv.player.GameFiles
 import com.aiconsole.retrotv.player.GameLibrary
@@ -31,6 +32,7 @@ class RetroApp : Application() {
     val art by lazy { ArtStore(this) }
     val health by lazy { SiteChecker(this) }
     val link by lazy { LinkServer(this) }
+    val sync by lazy { SaveSync(this) }
 
     override fun onCreate() {
         super.onCreate()
