@@ -54,6 +54,7 @@ import com.aiconsole.retrotv.apps.SiteApps
 import com.aiconsole.retrotv.data.ACCENTS
 import com.aiconsole.retrotv.data.BuiltInSites
 import com.aiconsole.retrotv.data.ControllerMode
+import com.aiconsole.retrotv.data.FreezeWatchdog
 import com.aiconsole.retrotv.data.SitePrefs
 import com.aiconsole.retrotv.data.UrlInput
 import com.aiconsole.retrotv.data.ViewMode
@@ -272,6 +273,9 @@ class BrowserActivity : ComponentActivity(), BrowserActions {
     @SuppressLint("SetJavaScriptEnabled")
     private fun createWebView() {
         val wv = WebView(this)
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_VIEW_RENDERER_CLIENT_BASIC_USAGE)) {
+            WebViewCompat.setWebViewRenderProcessClient(wv, RendererWatch.executor, RendererWatch.client)
+        }
         // A site app gets its own cookies and storage (Hermit-style sandbox) where supported.
         profileName?.let { name ->
             if (WebViewFeature.isFeatureSupported(WebViewFeature.MULTI_PROFILE)) {
@@ -455,6 +459,7 @@ class BrowserActivity : ComponentActivity(), BrowserActions {
             blocked.set(0)
             ui.blockedCount = 0
             applySiteSettings(UrlInput.host(url).orEmpty())
+            FreezeWatchdog.context = "Browser: ${UrlInput.host(url).orEmpty()}"
             updateNav()
         }
 

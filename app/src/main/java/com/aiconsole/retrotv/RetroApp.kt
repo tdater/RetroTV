@@ -2,7 +2,9 @@ package com.aiconsole.retrotv
 
 import android.app.Application
 import android.content.Context
+import com.aiconsole.retrotv.data.FreezeWatchdog
 import com.aiconsole.retrotv.data.History
+import com.aiconsole.retrotv.data.ProblemReport
 import com.aiconsole.retrotv.data.Settings
 import com.aiconsole.retrotv.data.SiteStore
 import com.aiconsole.retrotv.downloads.Downloads
@@ -26,6 +28,8 @@ class RetroApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        ProblemReport.installCrashHandler(this)
+        FreezeWatchdog.start(this)
         AdBlock.setCustom(settings.value.customBlockList)
     }
 

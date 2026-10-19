@@ -9,12 +9,15 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -35,6 +38,9 @@ import com.aiconsole.retrotv.data.ACCENTS
 import com.aiconsole.retrotv.data.Backdrop
 import com.aiconsole.retrotv.data.Backup
 import com.aiconsole.retrotv.data.BackupArchive
+import com.aiconsole.retrotv.data.ProblemReport
+import com.aiconsole.retrotv.data.ReportShare
+import java.io.File
 import com.aiconsole.retrotv.data.CardSize
 import com.aiconsole.retrotv.data.ControllerMode
 import com.aiconsole.retrotv.data.Prefs
@@ -60,6 +66,9 @@ fun SettingsScreen(onBack: () -> Unit, onNavigate: (Screen) -> Unit) {
     var message by remember { mutableStateOf("") }
     var editing by remember { mutableStateOf<Edit?>(null) }
     var showMapping by remember { mutableStateOf(false) }
+    var report by remember { mutableStateOf<Pair<File, String?>?>(null) }
+    val reportShare = remember { ReportShare(context, scope) }
+    DisposableEffect(Unit) { onDispose { reportShare.stop() } }
     val first = remember { FocusRequester() }
     fun set(change: (Prefs) -> Prefs) = app.settings.update(change)
 
@@ -249,6 +258,22 @@ fun SettingsScreen(onBack: () -> Unit, onNavigate: (Screen) -> Unit) {
 
                 item { SectionTitle("About") }
                 item {
+                    SettingRow("Report a problem", "${ProblemReport.crashCount(context)} crashes recorded", {
+                        scope.launch {
+                            message = "Preparing the report…"
+                            try {
+                                val file = withContext(Dispatchers.IO) { reportShare.writeReport() }
+                                report = file to reportShare.serve(file)
+                                message = ""
+                            } catch (e: CancellationException) {
+                                throw e
+                            } catch (e: Exception) {
+                                message = "Couldn't create the report: ${e.message}"
+                            }
+                        }
+                    }, subtitle = "Crashes, freezes and the app log, to send or scan with a phone")
+                }
+                item {
                     val version = runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() ?: "?"
                     val webView = runCatching { WebViewCompat.getCurrentWebViewPackage(context)?.versionName }.getOrNull() ?: "unknown"
                     Column(Modifier.padding(8.dp)) {
@@ -257,6 +282,17 @@ fun SettingsScreen(onBack: () -> Unit, onNavigate: (Screen) -> Unit) {
                     }
                 }
             }
+        }
+
+        report?.let { (file, url) ->
+            BackHandler { reportShare.stop(); report = null }
+            ReportPanel(url, onShare = {
+                try {
+                    context.startActivity(reportShare.shareIntent(file))
+                } catch (_: Exception) {
+                    message = "This TV can't share files; scan the QR code instead"
+                }
+            }, onClose = { reportShare.stop(); report = null })
         }
 
         when (editing) {
@@ -276,6 +312,31 @@ fun SettingsScreen(onBack: () -> Unit, onNavigate: (Screen) -> Unit) {
                 }
             }
             null -> Unit
+        }
+    }
+}
+
+/** The finished report: a QR code for a phone on the same Wi-Fi, or the share sheet. */
+@Composable
+private fun ReportPanel(url: String?, onShare: () -> Unit, onClose: () -> Unit) {
+    val first = remember { FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { first.requestFocus() } }
+    OverlayPanel("Report a problem", Modifier.fillMaxSize(), widthFraction = 0.6f) {
+        if (url != null) {
+            Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                QrCode(url, Modifier.size(220.dp))
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Scan with a phone on the same Wi-Fi to download the report.", color = androidx.compose.ui.graphics.Color.White, fontSize = 16.sp)
+                    Text(url, color = TextDim, fontSize = 13.sp)
+                    Text("The link works for 10 minutes and only for this report.", color = TextDim, fontSize = 13.sp)
+                }
+            }
+        } else {
+            Text("The TV isn't on Wi-Fi, so there's no QR code. Use Share instead.", color = androidx.compose.ui.graphics.Color.White, fontSize = 16.sp)
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            TvButton("Share…", onShare, Modifier.focusRequester(first), icon = "📤")
+            TvButton("Close", onClose, icon = "✕")
         }
     }
 }

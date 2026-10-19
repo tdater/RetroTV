@@ -37,8 +37,10 @@ import com.aiconsole.retrotv.RetroApp
 import com.aiconsole.retrotv.browser.BrowserActivity
 import com.aiconsole.retrotv.browser.CursorController
 import com.aiconsole.retrotv.browser.CursorView
+import com.aiconsole.retrotv.browser.RendererWatch
 import com.aiconsole.retrotv.browser.VirtualPads
 import com.aiconsole.retrotv.data.ACCENTS
+import com.aiconsole.retrotv.data.FreezeWatchdog
 import com.aiconsole.retrotv.ui.RetroTheme
 import com.aiconsole.retrotv.web.UserAgents
 import org.json.JSONObject
@@ -110,6 +112,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         })
 
         app.library.record(request)
+        FreezeWatchdog.context = "Player: ${request.core} ${request.displayTitle}"
         loadGame()
     }
 
@@ -118,6 +121,9 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
     @SuppressLint("SetJavaScriptEnabled")
     private fun createWebView(): WebView {
         val wv = WebView(this)
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_VIEW_RENDERER_CLIENT_BASIC_USAGE)) {
+            WebViewCompat.setWebViewRenderProcessClient(wv, RendererWatch.executor, RendererWatch.client)
+        }
         wv.settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
