@@ -1,43 +1,31 @@
 package com.aiconsole.retrotv.browser
 
 import android.annotation.SuppressLint
-import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
-import android.graphics.Bitmap
 import android.graphics.Color
 import android.hardware.input.InputManager
-import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.speech.RecognizerIntent
-import android.util.Base64
 import android.view.InputDevice
-import android.view.KeyCharacterMap
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.webkit.CookieManager
-import android.webkit.JavascriptInterface
-import android.webkit.RenderProcessGoneDetail
 import android.webkit.WebChromeClient
-import android.webkit.WebResourceRequest
-import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
-import android.webkit.WebViewClient
 import android.widget.FrameLayout
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.ComposeView
-import androidx.core.graphics.createBitmap
 import androidx.core.net.toUri
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -45,38 +33,22 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
-import androidx.webkit.ProfileStore
 import androidx.webkit.ScriptHandler
-import androidx.webkit.WebViewCompat
-import androidx.webkit.WebViewFeature
 import com.aiconsole.retrotv.RetroApp
 import com.aiconsole.retrotv.apps.SiteApps
 import com.aiconsole.retrotv.data.ACCENTS
 import com.aiconsole.retrotv.data.BuiltInSites
 import com.aiconsole.retrotv.data.ControllerMode
-import com.aiconsole.retrotv.data.FreezeWatchdog
 import com.aiconsole.retrotv.data.SitePrefs
 import com.aiconsole.retrotv.data.UrlInput
-import com.aiconsole.retrotv.data.ViewMode
 import com.aiconsole.retrotv.data.WindowMode
 import com.aiconsole.retrotv.downloads.DownloadItem
 import com.aiconsole.retrotv.downloads.SavedFile
-import com.aiconsole.retrotv.player.GameRequest
 import com.aiconsole.retrotv.player.PlayerActivity
-import com.aiconsole.retrotv.ui.MainActivity
 import com.aiconsole.retrotv.ui.RetroTheme
 import com.aiconsole.retrotv.web.AdBlock
-import com.aiconsole.retrotv.web.Gamepad
-import com.aiconsole.retrotv.web.Surrogates
-import com.aiconsole.retrotv.web.UserAgents
 import com.aiconsole.retrotv.web.Userscript
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import org.json.JSONObject
-import java.io.ByteArrayInputStream
-import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -90,56 +62,57 @@ import java.util.concurrent.atomic.AtomicInteger
  */
 class BrowserActivity : ComponentActivity(), BrowserActions {
 
-    private val app by lazy { RetroApp.from(this) }
-    private val settings get() = app.settings
-    private val ui = BrowserUiState()
-    private val pads = VirtualPads()
-    private val handler = Handler(Looper.getMainLooper())
+    internal val app by lazy { RetroApp.from(this) }
+    internal val settings get() = app.settings
+    internal val ui = BrowserUiState()
+    internal val pads = VirtualPads()
+    internal val handler = Handler(Looper.getMainLooper())
+    internal val controls: BrowserActions by lazy { browserControls() }
 
-    private lateinit var root: FrameLayout
-    private lateinit var webFrame: FrameLayout
-    private lateinit var fullFrame: FrameLayout
-    private lateinit var cursorView: CursorView
-    private lateinit var cursor: CursorController
-    private lateinit var overlay: ComposeView
+    internal lateinit var root: FrameLayout
+    internal lateinit var webFrame: FrameLayout
+    internal lateinit var fullFrame: FrameLayout
+    internal lateinit var cursorView: CursorView
+    internal lateinit var cursor: CursorController
+    internal lateinit var overlay: ComposeView
 
-    private var webView: WebView? = null
-    private var customView: View? = null
-    private var customCallback: WebChromeClient.CustomViewCallback? = null
-    private val scriptHandlers = mutableListOf<ScriptHandler>()
-    private var docStartScripts = false
-    private var defaultUa = ""
-    private var startUrl = "about:blank"
-    private var profileName: String? = null
+    internal var webView: WebView? = null
+    internal var customView: View? = null
+    internal var customCallback: WebChromeClient.CustomViewCallback? = null
+    internal val scriptHandlers = mutableListOf<ScriptHandler>()
+    internal var docStartScripts = false
+    internal var defaultUa = ""
+    internal var startUrl = "about:blank"
+    internal var profileName: String? = null
 
     @Volatile
-    private var adBlockActive = true
+    internal var adBlockActive = true
 
     /** RetroTV's player takes games on this page (read by the game hook from any frame). */
     @Volatile
-    private var playerActive = true
+    internal var playerActive = true
 
     /** Hosts where the user chose the site's own player for this visit. */
-    private val sitePlayer = HashSet<String>()
-    private var lastLaunch = 0L
-    private val gameHook by lazy { runCatching { assets.open("js/game-hook.js").bufferedReader().use { it.readText() } }.getOrDefault("") }
+    internal val sitePlayer = HashSet<String>()
+    internal var lastLaunch = 0L
+    internal val gameHook by lazy { runCatching { assets.open("js/game-hook.js").bufferedReader().use { it.readText() } }.getOrDefault("") }
 
     /** Auto controller mode: buttons that were sent as keys (their release must be too). */
-    private val autoKeys = HashSet<Int>()
-    private val blocked = AtomicInteger()
-    private val pendingBlobs = ConcurrentHashMap<String, String>()
+    internal val autoKeys = HashSet<Int>()
+    internal val blocked = AtomicInteger()
+    internal val pendingBlobs = ConcurrentHashMap<String, String>()
 
     /** A long press opened the menu; swallow the rest of that key press. */
-    private var swallowKey = -1
-    private var dpadCenterDown = false
-    private var selectHeld = false
-    private var stickKeys = emptySet<Int>()
-    private var windowedBeforeFocus = true
-    private var crashes = 0
-    private var lastCrash = 0L
+    internal var swallowKey = -1
+    internal var dpadCenterDown = false
+    internal var selectHeld = false
+    internal var stickKeys = emptySet<Int>()
+    internal var windowedBeforeFocus = true
+    internal var crashes = 0
+    internal var lastCrash = 0L
 
-    private val updateBlocked = Runnable { ui.blockedCount = blocked.get() }
-    private val longPress = Runnable {
+    internal val updateBlocked = Runnable { ui.blockedCount = blocked.get() }
+    internal val longPress = Runnable {
         val pointerHold = ui.inputMode == InputMode.Cursor && cursor.isPressing && !cursor.isDragging
         if (pointerHold || dpadCenterDown) {
             cursor.cancelPress()
@@ -149,7 +122,7 @@ class BrowserActivity : ComponentActivity(), BrowserActions {
         }
     }
 
-    private val player = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
+    internal val player = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
         if (r.resultCode == PlayerActivity.RESULT_PLAY_ON_SITE) {
             sitePlayer += ui.host
             applySiteSettings(ui.host)
@@ -160,12 +133,12 @@ class BrowserActivity : ComponentActivity(), BrowserActions {
         }
     }
 
-    private val voice = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
+    internal val voice = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
         val text = r.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
         if (r.resultCode == RESULT_OK && !text.isNullOrBlank()) load(text)
     }
 
-    private val inputListener = object : InputManager.InputDeviceListener {
+    internal val inputListener = object : InputManager.InputDeviceListener {
         override fun onInputDeviceAdded(deviceId: Int) {
             val before = ui.padCount
             updatePadCount()
@@ -261,494 +234,16 @@ class BrowserActivity : ComponentActivity(), BrowserActions {
         }
     }
 
-    private fun applyCursorLook() {
+    internal fun applyCursorLook() {
         val p = settings.value
         cursorView.sizeLevel = p.cursorSize
         cursorView.accent = ACCENTS[p.accent.coerceIn(0, ACCENTS.lastIndex)].second.toInt()
         cursorView.invalidate()
     }
 
-    // ---- WebView setup ----
-
-    @SuppressLint("SetJavaScriptEnabled")
-    private fun createWebView() {
-        val wv = WebView(this)
-        if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_VIEW_RENDERER_CLIENT_BASIC_USAGE)) {
-            WebViewCompat.setWebViewRenderProcessClient(wv, RendererWatch.executor, RendererWatch.client)
-        }
-        // A site app gets its own cookies and storage (Hermit-style sandbox) where supported.
-        profileName?.let { name ->
-            if (WebViewFeature.isFeatureSupported(WebViewFeature.MULTI_PROFILE)) {
-                runCatching {
-                    ProfileStore.getInstance().getOrCreateProfile(name)
-                    WebViewCompat.setProfile(wv, name)
-                }
-            }
-        }
-        wv.settings.apply {
-            javaScriptEnabled = true
-            domStorageEnabled = true
-            mediaPlaybackRequiresUserGesture = false
-            useWideViewPort = true
-            loadWithOverviewMode = true
-            setSupportZoom(true)
-            builtInZoomControls = true
-            displayZoomControls = false
-            setSupportMultipleWindows(true)
-            javaScriptCanOpenWindowsAutomatically = true
-            allowFileAccess = false
-            allowContentAccess = false
-            mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
-        }
-        CookieManager.getInstance().setAcceptCookie(true)
-        CookieManager.getInstance().setAcceptThirdPartyCookies(wv, true)
-        wv.setBackgroundColor(Color.BLACK)
-        wv.isFocusable = true
-        wv.isFocusableInTouchMode = true
-        // No long-press text selection: holding OK is the menu, and pointer drags shouldn't select.
-        wv.setOnLongClickListener { true }
-        wv.isLongClickable = false
-        wv.isHapticFeedbackEnabled = false
-        wv.addJavascriptInterface(pads.Bridge(), "RetroTVPad")
-        wv.addJavascriptInterface(FilesBridge(), "RetroTVFiles")
-        wv.addJavascriptInterface(GameBridge(), "RetroTVGame")
-        wv.addJavascriptInterface(ViewBridge(), "RetroTVView")
-        wv.webViewClient = Client()
-        wv.webChromeClient = Chrome()
-        wv.setDownloadListener { url, userAgent, contentDisposition, mimeType, _ ->
-            onDownload(url, userAgent, contentDisposition, mimeType)
-        }
-        webFrame.addView(wv, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
-        webView = wv
-        installScripts(wv)
-        applySiteSettings(UrlInput.host(startUrl).orEmpty())
-        wv.requestFocus()
-    }
-
-    /** Gamepad polyfill and userscripts, at document start in every frame where supported. */
-    private fun installScripts(wv: WebView) {
-        scriptHandlers.forEach { runCatching { it.remove() } }
-        scriptHandlers.clear()
-        if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
-            docStartScripts = true
-            scriptHandlers += WebViewCompat.addDocumentStartJavaScript(wv, VirtualPads.POLYFILL, setOf("*"))
-            scriptHandlers += WebViewCompat.addDocumentStartJavaScript(wv, PageScripts.VIEWPORT, setOf("*"))
-            if (gameHook.isNotEmpty()) scriptHandlers += WebViewCompat.addDocumentStartJavaScript(wv, gameHook, setOf("*"))
-            if (settings.value.userscripts) {
-                app.userscripts.injectable.forEach { (_, js) ->
-                    scriptHandlers += WebViewCompat.addDocumentStartJavaScript(wv, js, setOf("*"))
-                }
-            }
-        } else {
-            docStartScripts = false
-        }
-    }
-
-    /** Older WebViews: inject into the main frame once the new document exists. */
-    private fun injectFallback(view: WebView) {
-        if (docStartScripts) return
-        view.evaluateJavascript(VirtualPads.POLYFILL, null)
-        view.evaluateJavascript(PageScripts.VIEWPORT, null)
-        if (gameHook.isNotEmpty()) view.evaluateJavascript(gameHook, null)
-        if (settings.value.userscripts) app.userscripts.injectable.forEach { (_, js) -> view.evaluateJavascript(js, null) }
-    }
-
-    /**
-     * Applies the site's view mode, ad blocking, controller mode and text size. Returns true when
-     * the user agent changed (the page must reload to get the other layout).
-     */
-    private fun applySiteSettings(host: String): Boolean {
-        val wv = webView ?: return false
-        val desktop = settings.viewMode(host) == ViewMode.Desktop
-        ui.host = host
-        ui.desktop = desktop
-        ui.siteAdBlock = settings.adBlock(host)
-        ui.controllerMode = settings.controllerMode(host)
-        ui.sitePrefs = settings.site(host)
-        adBlockActive = ui.siteAdBlock
-        ui.gamePlayer = settings.builtInPlayer(host) && host !in sitePlayer
-        playerActive = ui.gamePlayer
-        val ua = settings.value.customUserAgent.ifBlank {
-            if (desktop) UserAgents.desktop(defaultUa) else UserAgents.mobile(defaultUa)
-        }
-        val changed = wv.settings.userAgentString != ua
-        wv.settings.userAgentString = ua
-        // Both views set a fixed layout width (PageScripts.VIEWPORT) that's zoomed to fit the screen.
-        wv.settings.loadWithOverviewMode = true
-        wv.settings.textZoom = settings.zoom(host)
-        return changed
-    }
-
-    private fun recreateWebView() {
-        val url = webView?.url ?: ui.url.ifEmpty { startUrl }
-        webView?.let {
-            webFrame.removeView(it)
-            it.destroy()
-        }
-        webView = null
-        exitCustomView(notify = false)
-        val now = SystemClock.uptimeMillis()
-        crashes = if (now - lastCrash < 30_000) crashes + 1 else 1
-        lastCrash = now
-        createWebView()
-        if (crashes > 2) {
-            toast("This page keeps crashing the browser, so it was stopped")
-            webView?.loadUrl("about:blank")
-        } else {
-            toast("The page crashed and was reloaded")
-            webView?.loadUrl(url)
-        }
-    }
-
-    private inner class Client : WebViewClient() {
-
-        override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-            val url = request.url.toString()
-            val scheme = request.url.scheme?.lowercase()
-            if (scheme != "http" && scheme != "https") {
-                if (scheme == "about" || scheme == "data" || scheme == "blob" || scheme == "javascript") return false
-                handleExternalScheme(url)
-                return true
-            }
-            if (isUserscriptUrl(url)) {
-                promptScript(url)
-                return true
-            }
-            if (!request.isForMainFrame) return false
-            if (adBlockActive && AdBlock.isBlocked(request.url.host)) {
-                countBlocked()
-                toast("Blocked an ad redirect")
-                return true
-            }
-            val current = view.url
-            if (adBlockActive && settings.value.blockPopups && !request.hasGesture() && !request.isRedirect &&
-                current != null && current.startsWith("http") && !UrlInput.sameSite(current, url)
-            ) {
-                ui.blockedPopup = url
-                toast("Blocked an automatic redirect · Menu ▸ Open blocked pop-up")
-                return true
-            }
-            val newHost = UrlInput.host(url).orEmpty()
-            if (newHost != ui.host && applySiteSettings(newHost)) {
-                view.loadUrl(url)
-                return true
-            }
-            return false
-        }
-
-        override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
-            if (!adBlockActive || request.isForMainFrame) return null
-            val host = request.url.host
-            if (!AdBlock.isBlocked(host)) return null
-            countBlocked()
-            // Scripts get a stand-in (or an empty script) so pages waiting on an ad library carry on.
-            val path = request.url.path.orEmpty()
-            val surrogate = Surrogates.find(host.orEmpty(), path)
-            if (surrogate != null || Surrogates.looksLikeScript(path, request.requestHeaders["Accept"])) {
-                val body = (surrogate ?: Surrogates.EMPTY).toByteArray()
-                val headers = mapOf("Access-Control-Allow-Origin" to "*", "Cache-Control" to "no-store")
-                return WebResourceResponse("application/javascript", "utf-8", 200, "OK", headers, ByteArrayInputStream(body))
-            }
-            return WebResourceResponse("text/plain", "utf-8", ByteArrayInputStream(ByteArray(0)))
-        }
-
-        override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
-            ui.loading = true
-            ui.url = url
-            ui.focusGame = false
-            blocked.set(0)
-            ui.blockedCount = 0
-            applySiteSettings(UrlInput.host(url).orEmpty())
-            FreezeWatchdog.context = "Browser: ${UrlInput.host(url).orEmpty()}"
-            updateNav()
-        }
-
-        override fun onPageCommitVisible(view: WebView, url: String) {
-            injectFallback(view)
-            cosmetic(view)
-        }
-
-        override fun onPageFinished(view: WebView, url: String) {
-            ui.loading = false
-            injectFallback(view)
-            cosmetic(view)
-            app.history.record(view.title, url)
-            view.title?.takeIf { it.isNotBlank() }?.let { ui.title = it }
-            updateNav()
-        }
-
-        override fun doUpdateVisitedHistory(view: WebView, url: String, isReload: Boolean) {
-            ui.url = url
-            updateNav()
-        }
-
-        override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
-            if (view === webView) recreateWebView()
-            return true
-        }
-    }
-
-    private inner class Chrome : WebChromeClient() {
-
-        override fun onProgressChanged(view: WebView, newProgress: Int) {
-            ui.progress = newProgress
-            ui.loading = newProgress < 100
-        }
-
-        override fun onReceivedTitle(view: WebView, title: String?) {
-            if (!title.isNullOrBlank()) ui.title = title
-        }
-
-        override fun onShowCustomView(view: View, callback: CustomViewCallback) {
-            if (customView != null) {
-                callback.onCustomViewHidden()
-                return
-            }
-            customView = view
-            customCallback = callback
-            fullFrame.addView(view, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
-            fullFrame.visibility = View.VISIBLE
-            ui.htmlFullscreen = true
-            applyWindowMode()
-        }
-
-        override fun onHideCustomView() {
-            exitCustomView(notify = false)
-        }
-
-        override fun onCreateWindow(view: WebView, isDialog: Boolean, isUserGesture: Boolean, resultMsg: android.os.Message): Boolean {
-            if (!isUserGesture && adBlockActive && settings.value.blockPopups) {
-                toast("Blocked a pop-up")
-                return false
-            }
-            // Catch the pop-up's first URL in a throwaway WebView, then decide where it goes.
-            val temp = WebView(this@BrowserActivity)
-            var handled = false
-            fun take(url: String?) {
-                if (handled || url.isNullOrEmpty() || url == "about:blank") return
-                handled = true
-                handlePopup(url)
-                handler.post { temp.destroy() }
-            }
-            temp.webViewClient = object : WebViewClient() {
-                override fun shouldOverrideUrlLoading(v: WebView, r: WebResourceRequest): Boolean {
-                    take(r.url.toString())
-                    return true
-                }
-
-                override fun onPageStarted(v: WebView, url: String?, favicon: Bitmap?) {
-                    v.stopLoading()
-                    take(url)
-                }
-            }
-            (resultMsg.obj as WebView.WebViewTransport).webView = temp
-            resultMsg.sendToTarget()
-            return true
-        }
-
-        override fun getDefaultVideoPoster(): Bitmap = createBitmap(1, 1)
-    }
-
-    private fun handlePopup(url: String) {
-        if (adBlockActive && AdBlock.isBlocked(UrlInput.host(url))) {
-            countBlocked()
-            toast("Blocked a pop-up ad")
-            return
-        }
-        if (adBlockActive && settings.value.blockPopups && !UrlInput.sameSite(webView?.url, url)) {
-            ui.blockedPopup = url
-            toast("Blocked a pop-up · Menu ▸ Open blocked pop-up")
-            return
-        }
-        webView?.loadUrl(url)
-    }
-
-    private fun countBlocked() {
-        blocked.incrementAndGet()
-        handler.removeCallbacks(updateBlocked)
-        handler.postDelayed(updateBlocked, 250)
-    }
-
-    private fun cosmetic(view: WebView) {
-        if (adBlockActive && settings.value.cosmetic) view.evaluateJavascript(PageScripts.cosmetic(AdBlock.COSMETIC_CSS), null)
-    }
-
-    private fun updateNav() {
-        val wv = webView ?: return
-        ui.canBack = wv.canGoBack()
-        ui.canForward = wv.canGoForward()
-    }
-
-    private fun handleExternalScheme(url: String) {
-        if (url.startsWith("intent:")) {
-            val fallback = runCatching { Intent.parseUri(url, Intent.URI_INTENT_SCHEME).getStringExtra("browser_fallback_url") }.getOrNull()
-            if (fallback != null && fallback.startsWith("http")) {
-                webView?.loadUrl(fallback)
-                return
-            }
-        }
-        toast("Blocked a link that tried to open another app")
-    }
-
-    private fun isUserscriptUrl(url: String) = url.substringBefore('?').substringBefore('#').endsWith(".user.js", true)
-
-    private fun promptScript(url: String) {
-        show(Panel.InstallScript(url, null, null))
-        lifecycleScope.launch {
-            val next = try {
-                Panel.InstallScript(url, app.userscripts.fetch(url), null)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                Panel.InstallScript(url, null, e.message ?: "unknown error")
-            }
-            if ((ui.panel as? Panel.InstallScript)?.url == url) ui.panel = next
-        }
-    }
-
-    // ---- Downloads ----
-
-    private fun onDownload(url: String, userAgent: String?, contentDisposition: String?, mimeType: String?) {
-        when {
-            isUserscriptUrl(url) -> promptScript(url)
-            url.startsWith("blob:") -> {
-                val ext = mimeType?.let { android.webkit.MimeTypeMap.getSingleton().getExtensionFromMimeType(it) }
-                val name = contentDisposition?.let { UrlInput.guessFileName(url, it, mimeType) }
-                    ?: ("download-" + System.currentTimeMillis() + (ext?.let { ".$it" } ?: ""))
-                val token = UUID.randomUUID().toString()
-                pendingBlobs[token] = name
-                webView?.evaluateJavascript(PageScripts.saveBlob(url, token, name), null)
-                toast("Saving $name…")
-            }
-            url.startsWith("data:") -> {
-                val header = url.substringBefore(',')
-                val data = url.substringAfter(',')
-                val mime = header.removePrefix("data:").substringBefore(';').ifEmpty { "application/octet-stream" }
-                val bytes = runCatching {
-                    if (header.contains(";base64")) Base64.decode(data, Base64.DEFAULT) else Uri.decode(data).toByteArray()
-                }.getOrNull() ?: return toast("Couldn't read that download")
-                val ext = android.webkit.MimeTypeMap.getSingleton().getExtensionFromMimeType(mime)
-                saveInBackground("download-" + System.currentTimeMillis() + (ext?.let { ".$it" } ?: ""), mime, bytes)
-            }
-            else -> try {
-                val name = app.downloads.enqueue(url, userAgent, contentDisposition, mimeType, webView?.url)
-                toast("Downloading $name")
-            } catch (e: Exception) {
-                toast("Download failed: ${e.message}")
-            }
-        }
-    }
-
-    private fun saveInBackground(name: String, mime: String, bytes: ByteArray) {
-        lifecycleScope.launch(Dispatchers.IO) {
-            try {
-                app.downloads.saveBytes(name, mime, bytes)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                withContext(Dispatchers.Main) { toast("Couldn't save $name: ${e.message}") }
-            }
-        }
-    }
-
-    /** Receives blob: downloads read by [PageScripts.saveBlob]. Only tokens we issued are accepted. */
-    inner class FilesBridge {
-        @JavascriptInterface
-        fun save(token: String, name: String, mime: String, base64: String) {
-            val expected = pendingBlobs.remove(token) ?: return
-            val bytes = runCatching { Base64.decode(base64, Base64.DEFAULT) }.getOrNull() ?: return
-            saveInBackground(expected.ifEmpty { name }, mime, bytes)
-        }
-
-        @JavascriptInterface
-        fun failed(token: String, message: String) {
-            if (pendingBlobs.remove(token) != null) handler.post { toast("Couldn't save: $message") }
-        }
-    }
-
-    /**
-     * The game hook (assets/js/game-hook.js) in any frame: an EmulatorJS game is about to start.
-     * When RetroTV's player is on here, the hook stops the site's emulator and hands the game over.
-     */
-    inner class GameBridge {
-        @JavascriptInterface
-        fun enabled(core: String): Boolean = playerActive && core.isNotBlank()
-
-        @JavascriptInterface
-        fun launch(json: String) {
-            handler.post { launchGame(json) }
-        }
-
-        @JavascriptInterface
-        fun failed(message: String) {
-            handler.post { toast("Couldn't hand the game to RetroTV's player ($message) · Menu ▸ Game player: site") }
-        }
-
-        @JavascriptInterface
-        fun blobOpen(name: String, size: Double): String = if (playerActive) app.games.blobOpen(name, size.toLong()).orEmpty() else ""
-
-        @JavascriptInterface
-        fun blobWrite(token: String, data: String) = app.games.blobWrite(token, data)
-
-        @JavascriptInterface
-        fun blobClose(token: String): Boolean = app.games.blobClose(token)
-    }
-
-    /** Layout width for [PageScripts.VIEWPORT]. */
-    inner class ViewBridge {
-        @JavascriptInterface
-        fun width(host: String): Int = if (host.isEmpty()) 0 else settings.viewMode(host).viewportWidth
-    }
-
-    private fun launchGame(json: String) {
-        val now = SystemClock.uptimeMillis()
-        if (!playerActive || isFinishing || now - lastLaunch < 3000) return
-        val o = runCatching { JSONObject(json) }.getOrNull() ?: return
-        fun opt(key: String) = o.optString(key).takeIf { it.isNotEmpty() && it != "null" }
-        fun file(value: String?): String? = when {
-            value == null -> null
-            value.startsWith("blob:") -> app.games.blobFile(value.removePrefix("blob:"))?.let { "file:" + it.absolutePath }
-            value.startsWith("http://") || value.startsWith("https://") -> value
-            else -> null
-        }
-        val game = file(opt("game")) ?: return toast("RetroTV's player couldn't read this game's file")
-        lastLaunch = now
-        // An embed frame's title is often just "Play"; the page's own title names the game better.
-        val frameTitle = opt("title")?.takeIf { o.optBoolean("top") || (it.length > 4 && !it.startsWith("Play", ignoreCase = true)) }
-        val request = GameRequest(
-            core = o.optString("core"),
-            game = game,
-            bios = file(opt("bios")),
-            parent = file(opt("parent")),
-            patch = file(opt("patch")),
-            state = file(opt("state")),
-            gameName = opt("gameName").orEmpty(),
-            title = cleanTitle(frameTitle ?: ui.title),
-            page = ui.url.ifEmpty { opt("page").orEmpty() },
-            referer = opt("page").orEmpty(),
-            userAgent = webView?.settings?.userAgentString.orEmpty(),
-            profile = profileName
-        )
-        releaseKeys()
-        show(null)
-        try {
-            player.launch(PlayerActivity.intent(this, request))
-        } catch (e: Exception) {
-            toast("Couldn't open the player: ${e.message}")
-        }
-    }
-
-    /** "Play Contra Online - Site" → "Contra". */
-    private fun cleanTitle(title: String): String {
-        var t = title.substringBefore(" | ").substringBefore(" – ")
-        if (t.contains(" - ")) t = t.substringBeforeLast(" - ").ifBlank { t }
-        t = t.removePrefix("Play ").removeSuffix(" Online").removeSuffix(" online").trim()
-        return t.ifBlank { title }
-    }
-
     // ---- Layout and modes ----
 
-    private fun applyWindowMode() {
+    internal fun applyWindowMode() {
         val top = if (ui.windowed && !ui.htmlFullscreen) (TOOLBAR_DP * resources.displayMetrics.density).toInt() else 0
         val lp = webFrame.layoutParams as FrameLayout.LayoutParams
         if (lp.topMargin != top) {
@@ -758,13 +253,13 @@ class BrowserActivity : ComponentActivity(), BrowserActions {
         hideSystemBars()
     }
 
-    private fun hideSystemBars() {
+    internal fun hideSystemBars() {
         val c = WindowCompat.getInsetsController(window, window.decorView)
         c.hide(WindowInsetsCompat.Type.systemBars())
         c.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
     }
 
-    private fun exitCustomView(notify: Boolean) {
+    internal fun exitCustomView(notify: Boolean) {
         val v = customView ?: return
         val cb = customCallback
         customView = null
@@ -777,7 +272,7 @@ class BrowserActivity : ComponentActivity(), BrowserActions {
         webView?.requestFocus()
     }
 
-    private fun updatePadCount() {
+    internal fun updatePadCount() {
         ui.padCount = InputDevice.getDeviceIds().count { id ->
             val d = InputDevice.getDevice(id) ?: return@count false
             !d.isVirtual && ((d.sources and InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD ||
@@ -785,20 +280,12 @@ class BrowserActivity : ComponentActivity(), BrowserActions {
         }
     }
 
-    private fun toast(text: String) {
+    internal fun toast(text: String) {
         ui.toast = text
         ui.toastId++
     }
 
     // ---- Input ----
-
-    private fun isMenuKey(code: Int) = code == KeyEvent.KEYCODE_MENU || code == KeyEvent.KEYCODE_INFO ||
-        code == KeyEvent.KEYCODE_GUIDE || code == KeyEvent.KEYCODE_SETTINGS
-
-    private fun isConfirm(code: Int) = code == KeyEvent.KEYCODE_DPAD_CENTER || code == KeyEvent.KEYCODE_ENTER || code == KeyEvent.KEYCODE_NUMPAD_ENTER
-
-    private fun isArrow(code: Int) = code == KeyEvent.KEYCODE_DPAD_UP || code == KeyEvent.KEYCODE_DPAD_DOWN ||
-        code == KeyEvent.KEYCODE_DPAD_LEFT || code == KeyEvent.KEYCODE_DPAD_RIGHT
 
     // TV remotes need the raw Back key (long press opens the menu); gesture/system back still goes
     // through the OnBackPressedCallback. RestrictedApi is lint's false positive on super.dispatchKeyEvent.
@@ -904,7 +391,7 @@ class BrowserActivity : ComponentActivity(), BrowserActions {
     }
 
     @SuppressLint("RestrictedApi")
-    private fun handleController(event: KeyEvent): Boolean {
+    internal fun handleController(event: KeyEvent): Boolean {
         val code = event.keyCode
         val down = event.action == KeyEvent.ACTION_DOWN
         if (code == KeyEvent.KEYCODE_BUTTON_SELECT) selectHeld = down
@@ -941,25 +428,6 @@ class BrowserActivity : ComponentActivity(), BrowserActions {
         return handled || super.dispatchKeyEvent(event)
     }
 
-    /** "Pad moves pointer": the controller drives the browser instead of the game. */
-    private fun controllerBrowse(event: KeyEvent): Boolean {
-        val code = event.keyCode
-        val down = event.action == KeyEvent.ACTION_DOWN
-        when (code) {
-            KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT ->
-                if (down) cursor.press(code) else cursor.release(code)
-            KeyEvent.KEYCODE_BUTTON_A -> if (down) {
-                if (event.repeatCount == 0) cursor.pressDown()
-            } else cursor.pressUp()
-            KeyEvent.KEYCODE_BUTTON_B -> if (!down) handleBack()
-            KeyEvent.KEYCODE_BUTTON_Y -> if (!down) openMenu()
-            KeyEvent.KEYCODE_BUTTON_X -> if (!down) toggleControllerBrowse()
-            KeyEvent.KEYCODE_BUTTON_L1, KeyEvent.KEYCODE_BUTTON_L2 -> if (down) pageScroll(-1)
-            KeyEvent.KEYCODE_BUTTON_R1, KeyEvent.KEYCODE_BUTTON_R2 -> if (down) pageScroll(1)
-        }
-        return true
-    }
-
     override fun dispatchGenericMotionEvent(ev: MotionEvent): Boolean {
         if (ui.panel == null && VirtualPads.isJoystick(ev) && ev.action == MotionEvent.ACTION_MOVE) {
             if (ui.controllerBrowse) {
@@ -979,81 +447,7 @@ class BrowserActivity : ComponentActivity(), BrowserActions {
         return super.dispatchGenericMotionEvent(ev)
     }
 
-    /** Keyboard mode: hat switch and left stick become the mapped D-pad keys. */
-    private fun stickToKeys(ev: MotionEvent) {
-        val hx = ev.getAxisValue(MotionEvent.AXIS_HAT_X)
-        val hy = ev.getAxisValue(MotionEvent.AXIS_HAT_Y)
-        val now = Gamepad.stickDirections(ev.getAxisValue(MotionEvent.AXIS_X), ev.getAxisValue(MotionEvent.AXIS_Y)) +
-            Gamepad.stickDirections(hx, hy, 0.5f)
-        val mapping = settings.value.mapping
-        val t = SystemClock.uptimeMillis()
-        (now - stickKeys).forEach { dir -> mapping[dir]?.takeIf { it != 0 }?.let { dispatchToPage(keyboardEvent(t, KeyEvent.ACTION_DOWN, it)) } }
-        (stickKeys - now).forEach { dir -> mapping[dir]?.takeIf { it != 0 }?.let { dispatchToPage(keyboardEvent(t, KeyEvent.ACTION_UP, it)) } }
-        stickKeys = now
-    }
-
-    private fun keyboardEvent(time: Long, action: Int, code: Int) =
-        KeyEvent(time, time, action, code, 0, 0, KeyCharacterMap.VIRTUAL_KEYBOARD, 0, 0, InputDevice.SOURCE_KEYBOARD)
-
-    private fun sendKey(src: KeyEvent, code: Int) {
-        dispatchToPage(
-            KeyEvent(src.downTime, src.eventTime, src.action, code, src.repeatCount, 0, KeyCharacterMap.VIRTUAL_KEYBOARD, 0, 0, InputDevice.SOURCE_KEYBOARD)
-        )
-    }
-
-    private fun dispatchToPage(event: KeyEvent) {
-        (customView ?: webView)?.dispatchKeyEvent(event)
-    }
-
-    private fun releaseStickKeys() {
-        if (stickKeys.isEmpty()) return
-        val t = SystemClock.uptimeMillis()
-        val mapping = settings.value.mapping
-        stickKeys.forEach { dir -> mapping[dir]?.takeIf { it != 0 }?.let { dispatchToPage(keyboardEvent(t, KeyEvent.ACTION_UP, it)) } }
-        stickKeys = emptySet()
-    }
-
-    private fun releaseKeys() {
-        releaseStickKeys()
-        val t = SystemClock.uptimeMillis()
-        val mapping = settings.value.mapping
-        autoKeys.forEach { code -> mapping[code]?.takeIf { it != 0 }?.let { dispatchToPage(keyboardEvent(t, KeyEvent.ACTION_UP, it)) } }
-        autoKeys.clear()
-        pads.releaseAll()
-        cursor.releaseAll()
-    }
-
-    @Suppress("DEPRECATION")
-    private fun cssScale(): Float = webView?.scale?.takeIf { it > 0f } ?: resources.displayMetrics.density
-
-    private fun edgeScroll(x: Float, y: Float, dx: Float, dy: Float) {
-        if (customView != null) return
-        val wv = webView ?: return
-        val s = cssScale()
-        val lx = (x - webFrame.left).coerceIn(0f, wv.width - 1f)
-        val ly = (y - webFrame.top).coerceIn(0f, wv.height - 1f)
-        wv.evaluateJavascript(PageScripts.scrollAt(lx / s, ly / s, dx / s, dy / s), null)
-    }
-
-    private fun scrollBy(dx: Float, dy: Float) = edgeScroll(cursorView.px, cursorView.py, dx, dy)
-
-    private fun pageScroll(direction: Int) {
-        val wv = webView ?: return
-        edgeScroll(cursorView.px, cursorView.py, 0f, direction * wv.height * 0.8f)
-    }
-
-    private fun hover(x: Float, y: Float) {
-        if (customView != null) return
-        val wv = webView ?: return
-        val lx = x - webFrame.left
-        val ly = y - webFrame.top
-        if (lx < 0 || ly < 0 || lx > wv.width || ly > wv.height) return
-        val ev = CursorController.hoverEvent(lx, ly)
-        wv.dispatchGenericMotionEvent(ev)
-        ev.recycle()
-    }
-
-    private fun handleBack() {
+    internal fun handleBack() {
         val wv = webView
         when {
             customView != null -> {
@@ -1066,7 +460,7 @@ class BrowserActivity : ComponentActivity(), BrowserActions {
         }
     }
 
-    private fun openMenu() {
+    internal fun openMenu() {
         handler.removeCallbacks(longPress)
         releaseKeys()
         updatePadCount()
@@ -1076,214 +470,38 @@ class BrowserActivity : ComponentActivity(), BrowserActions {
     }
 
     /** The built-in site this page belongs to (it has a launcher alias). */
-    private fun appSite() = ui.site?.takeIf { it.builtIn && UrlInput.sameSite(it.url, ui.url.ifEmpty { startUrl }) }
+    internal fun appSite() = ui.site?.takeIf { it.builtIn && UrlInput.sameSite(it.url, ui.url.ifEmpty { startUrl }) }
         ?: BuiltInSites.ALL.firstOrNull { UrlInput.sameSite(it.url, ui.url) && UrlInput.host(it.url) == UrlInput.host(ui.url) }
 
-    // ---- BrowserActions ----
+    // ---- BrowserActions (implemented in BrowserControls.kt) ----
 
-    override fun show(panel: Panel?) {
-        ui.panel = panel
-        cursorView.shown = panel == null && ui.inputMode == InputMode.Cursor
-        if (panel == null) webView?.requestFocus()
-    }
-
-    override fun back() {
-        show(null)
-        webView?.takeIf { it.canGoBack() }?.goBack()
-    }
-
-    override fun forward() {
-        show(null)
-        webView?.takeIf { it.canGoForward() }?.goForward()
-    }
-
-    override fun reload() {
-        show(null)
-        val wv = webView ?: return
-        if (ui.loading) wv.stopLoading() else wv.reload()
-    }
-
-    override fun home() {
-        show(null)
-        if (ui.standalone || isTaskRoot) {
-            startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP))
-        }
-        if (!ui.standalone) finish()
-    }
-
-    override fun siteStart() {
-        show(null)
-        webView?.loadUrl(ui.site?.url ?: startUrl)
-    }
-
-    override fun load(text: String) {
-        val url = UrlInput.toUrl(text, settings.value.searchEngine)
-        if (url.isEmpty()) return
-        show(null)
-        applySiteSettings(UrlInput.host(url).orEmpty())
-        webView?.loadUrl(url)
-    }
-
-    override fun voiceSearch() {
-        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
-            .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_WEB_SEARCH)
-            .putExtra(RecognizerIntent.EXTRA_PROMPT, "Say a website or search")
-        try {
-            voice.launch(intent)
-        } catch (_: ActivityNotFoundException) {
-            toast("Voice search isn't available on this TV")
-        }
-    }
-
-    override fun toggleWindow() {
-        ui.windowed = !ui.windowed
-        settings.update { it.copy(windowMode = if (ui.windowed) WindowMode.Windowed else WindowMode.Fullscreen) }
-        applyWindowMode()
-        toast(if (ui.windowed) "Windowed: toolbar shown" else "Full screen: hold OK or press Menu for controls")
-    }
-
-    override fun toggleFocusGame() {
-        show(null)
-        val wv = webView ?: return
-        wv.evaluateJavascript(PageScripts.FOCUS_GAME) { result ->
-            when (result?.trim('"')) {
-                "on" -> {
-                    windowedBeforeFocus = ui.windowed
-                    ui.focusGame = true
-                    ui.windowed = false
-                    applyWindowMode()
-                    toast("Game focused · Back to restore")
-                }
-                "off" -> {
-                    ui.focusGame = false
-                    ui.windowed = windowedBeforeFocus
-                    applyWindowMode()
-                }
-                else -> toast("No game found on this page yet: start the game first")
-            }
-        }
-    }
-
-    override fun toggleDesktop() {
-        val host = ui.host
-        settings.updateSite(host) { it.copy(viewMode = if (ui.desktop) ViewMode.Mobile else ViewMode.Desktop) }
-        applySiteSettings(host)
-        toast(if (ui.desktop) "Desktop view for $host: full-size layout, 1280 px wide" else "TV view for $host: mobile layout, everything larger")
-        show(null)
-        webView?.reload()
-    }
-
-    override fun zoom(delta: Int) {
-        webView?.zoomBy(if (delta > 0) 1.2f else 1f / 1.2f)
-    }
-
-    override fun toggleInput() {
-        ui.inputMode = if (ui.inputMode == InputMode.Cursor) InputMode.Dpad else InputMode.Cursor
-        cursor.releaseAll()
-        cursorView.shown = ui.inputMode == InputMode.Cursor && ui.panel == null
-        toast(if (ui.inputMode == InputMode.Cursor) "Remote: pointer" else "Remote: D-pad keys (arrows + Enter) · Play/Pause to switch back")
-    }
-
-    override fun toggleAdBlock() {
-        val host = ui.host
-        settings.updateSite(host) { it.copy(adBlock = if (ui.siteAdBlock) false else null) }
-        applySiteSettings(host)
-        toast(if (ui.siteAdBlock) "Ad blocking on for $host" else "Ad blocking off for $host")
-        webView?.reload()
-    }
-
-    override fun toggleGamePlayer() {
-        val host = ui.host
-        val next = !ui.gamePlayer
-        sitePlayer -= host
-        settings.updateSite(host) { it.copy(player = if (next == settings.value.builtInPlayer) null else next) }
-        applySiteSettings(host)
-        show(null)
-        toast(if (ui.gamePlayer) "Games on $host open in RetroTV's player" else "Games on $host use the site's own player")
-        webView?.reload()
-    }
-
-    override fun cycleController() {
-        val modes = ControllerMode.entries
-        val next = modes[(modes.indexOf(ui.controllerMode) + 1) % modes.size]
-        settings.updateSite(ui.host) { it.copy(controllerMode = next) }
-        applySiteSettings(ui.host)
-        releaseKeys()
-        toast("Controller: ${next.label} on ${ui.host}")
-    }
-
-    override fun toggleControllerBrowse() {
-        ui.controllerBrowse = !ui.controllerBrowse
-        releaseKeys()
-        cursorView.shown = true
-        toast(if (ui.controllerBrowse) "Controller moves the pointer · X to play again" else "Controller plays the game")
-    }
-
-    override fun installApp() {
-        show(null)
-        val site = appSite()
-        if (site != null && SiteApps.hasAlias(this, site)) {
-            val installed = SiteApps.isInstalled(this, site)
-            SiteApps.setInstalled(this, site, !installed)
-            toast(if (installed) "${site.name} app removed" else "${site.name} installed: it's now in your TV's apps")
-            return
-        }
-        val name = ui.title.ifEmpty { ui.host }
-        val url = ui.url.ifEmpty { startUrl }
-        if (SiteApps.pinShortcut(this, name, url, 0xFF7E57C2)) {
-            toast("Asked the launcher to add \"$name\"")
-        } else {
-            app.sites.add(name, url)
-            toast("This launcher can't add shortcuts, so \"$name\" was added to the RetroTV home screen")
-        }
-    }
-
-    override fun addToHome() {
-        show(null)
-        app.sites.add(ui.title.ifEmpty { ui.host }, ui.url.ifEmpty { startUrl })
-        toast("Added to the RetroTV home screen")
-    }
-
-    override fun openDownloads() {
-        show(null)
-        startActivity(MainActivity.intent(this, MainActivity.SCREEN_DOWNLOADS))
-    }
-
-    override fun openSettings() {
-        show(null)
-        startActivity(MainActivity.intent(this, MainActivity.SCREEN_SETTINGS))
-    }
-
-    override fun openBlocked() {
-        val url = ui.blockedPopup ?: return
-        ui.blockedPopup = null
-        show(null)
-        webView?.loadUrl(url)
-    }
-
-    override fun exit() {
-        show(null)
-        if (ui.standalone) finishAndRemoveTask() else finish()
-    }
-
-    override fun installScript(script: Userscript, url: String) {
-        lifecycleScope.launch {
-            app.userscripts.install(script, url)
-            show(null)
-            toast("Installed ${script.name}")
-            webView?.reload()
-        }
-    }
-
-    override fun installApk(item: DownloadItem) = app.downloads.open(this, item)
-
-    override fun openSaved(file: SavedFile) = app.downloads.openSaved(this, file)
-
-    override fun updateSite(change: (SitePrefs) -> SitePrefs) {
-        settings.updateSite(ui.host, change)
-        applySiteSettings(ui.host)
-        webView?.reload()
-    }
+    override fun show(panel: Panel?) = controls.show(panel)
+    override fun back() = controls.back()
+    override fun forward() = controls.forward()
+    override fun reload() = controls.reload()
+    override fun home() = controls.home()
+    override fun siteStart() = controls.siteStart()
+    override fun load(text: String) = controls.load(text)
+    override fun voiceSearch() = controls.voiceSearch()
+    override fun toggleWindow() = controls.toggleWindow()
+    override fun toggleFocusGame() = controls.toggleFocusGame()
+    override fun toggleDesktop() = controls.toggleDesktop()
+    override fun zoom(delta: Int) = controls.zoom(delta)
+    override fun toggleInput() = controls.toggleInput()
+    override fun toggleAdBlock() = controls.toggleAdBlock()
+    override fun toggleGamePlayer() = controls.toggleGamePlayer()
+    override fun cycleController() = controls.cycleController()
+    override fun toggleControllerBrowse() = controls.toggleControllerBrowse()
+    override fun installApp() = controls.installApp()
+    override fun addToHome() = controls.addToHome()
+    override fun openDownloads() = controls.openDownloads()
+    override fun openSettings() = controls.openSettings()
+    override fun openBlocked() = controls.openBlocked()
+    override fun exit() = controls.exit()
+    override fun installScript(script: Userscript, url: String) = controls.installScript(script, url)
+    override fun installApk(item: DownloadItem) = controls.installApk(item)
+    override fun openSaved(file: SavedFile) = controls.openSaved(file)
+    override fun updateSite(change: (SitePrefs) -> SitePrefs) = controls.updateSite(change)
 
     // ---- Lifecycle ----
 
@@ -1326,7 +544,7 @@ class BrowserActivity : ComponentActivity(), BrowserActions {
 
         /** Open with the site's own game player (from the player's "Play on the site"). */
         const val EXTRA_SITE_PLAYER = "site_player"
-        private const val LONG_PRESS_MS = 650L
+        internal const val LONG_PRESS_MS = 650L
 
         fun open(context: Context, url: String, siteId: String? = null, title: String? = null): Intent =
             Intent(context, BrowserActivity::class.java)
