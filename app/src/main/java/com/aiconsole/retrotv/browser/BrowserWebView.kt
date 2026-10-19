@@ -60,11 +60,11 @@ internal fun BrowserActivity.createWebView() {
     wv.isLongClickable = false
     wv.isHapticFeedbackEnabled = false
     wv.addJavascriptInterface(pads.Bridge(), "RetroTVPad")
-    wv.addJavascriptInterface(FilesBridge(), "RetroTVFiles")
-    wv.addJavascriptInterface(GameBridge(), "RetroTVGame")
-    wv.addJavascriptInterface(ViewBridge(), "RetroTVView")
-    wv.webViewClient = Client()
-    wv.webChromeClient = Chrome()
+    wv.addJavascriptInterface(filesBridge(), "RetroTVFiles")
+    wv.addJavascriptInterface(gameBridge(), "RetroTVGame")
+    wv.addJavascriptInterface(viewBridge(), "RetroTVView")
+    wv.webViewClient = browserClient()
+    wv.webChromeClient = browserChrome()
     wv.setDownloadListener { url, userAgent, contentDisposition, mimeType, _ ->
         onDownload(url, userAgent, contentDisposition, mimeType)
     }
