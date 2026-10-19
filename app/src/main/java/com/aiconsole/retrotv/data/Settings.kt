@@ -53,7 +53,9 @@ data class Prefs(
     /** Games on EmulatorJS sites open in RetroTV's own player. */
     val builtInPlayer: Boolean = true,
     /** Sites (hosts) whose games have opened in RetroTV's player: their cards get a "Player ✓" badge. */
-    val playerHosts: Set<String> = emptySet()
+    val playerHosts: Set<String> = emptySet(),
+    /** Rewind in the built-in player (Select+L2, remote Rewind); off by default, it costs memory. */
+    val rewind: Boolean = false
 )
 
 /** Overrides one site (by host) can have; null means "use the global setting". */
@@ -116,7 +118,8 @@ class Settings(context: Context) {
             autoFullscreenGames = prefs.getBoolean("autoFullscreenGames", d.autoFullscreenGames),
             sandboxApps = prefs.getBoolean("sandboxApps", d.sandboxApps),
             builtInPlayer = prefs.getBoolean("builtInPlayer", d.builtInPlayer),
-            playerHosts = prefs.getStringSet("playerHosts", d.playerHosts).orEmpty().toSet()
+            playerHosts = prefs.getStringSet("playerHosts", d.playerHosts).orEmpty().toSet(),
+            rewind = prefs.getBoolean("rewind", d.rewind)
         )
     }
 
@@ -149,6 +152,7 @@ class Settings(context: Context) {
         putBoolean("sandboxApps", p.sandboxApps)
         putBoolean("builtInPlayer", p.builtInPlayer)
         putStringSet("playerHosts", p.playerHosts)
+        putBoolean("rewind", p.rewind)
         putInt("version", 2)
     }
 

@@ -36,6 +36,7 @@
   window.EJS_language = 'en-US';
   window.EJS_disableAutoLang = false;
   window.EJS_defaultOptions = { 'virtual-gamepad': 'disabled' };
+  if (q.get('rewind') === '1') window.EJS_defaultOptions.rewindEnabled = 'enabled';
   window.EJS_Buttons = { netplay: false };
   if (q.get('legacy') === '1') window.EJS_forceLegacyCores = true;
   window.EJS_threads = q.get('threads') === '1' && typeof SharedArrayBuffer === 'function' && self.crossOriginIsolated === true;
@@ -175,6 +176,9 @@
     restart: function () { try { emu().gameManager.restart(); show('Restarted'); } catch (e) {} },
     pause: function (on) { try { var e = emu(); if (on) e.pause(); else e.play(); } catch (x) {} },
     fast: function (on) { try { var e = emu(); e.isFastForward = !!on; e.gameManager.toggleFastForward(on ? 1 : 0); } catch (x) {} },
+    rewind: function (on) {
+      try { var e = emu(); if (e.rewindEnabled) e.gameManager.functions.toggleRewind(on ? 1 : 0); } catch (x) {}
+    },
     mute: function (on) { try { var e = emu(); e.muted = !!on; e.setVolume(on ? 0 : e.volume); } catch (x) {} },
     flush: function () { try { emu().gameManager.saveSaveFiles(); } catch (e) {} },
     menu: function () { try { emu().menu.open(true); } catch (e) {} },

@@ -70,6 +70,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
     private var selectHeld = false
     private var swallowKey = -1
     private var resumedAt = 0L
+    private var rewinding = false
 
     private val inputListener = object : InputManager.InputDeviceListener {
         override fun onInputDeviceAdded(deviceId: Int) = Unit
@@ -189,6 +190,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         )
         files.forEach { (k, v) -> query[k] = v }
         if (legacy) query["legacy"] = "1"
+        if (app.settings.value.rewind) query["rewind"] = "1"
         if (threads) {
             query["threads"] = "1"
             query["coi"] = "1"
@@ -287,6 +289,12 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
                 if (!down) show(PlayerPanel.Menu)
                 return true
             }
+            // Releasing L2 always ends a rewind, even if Select was let go first.
+            if (rewinding && code == KeyEvent.KEYCODE_BUTTON_L2 && !down) {
+                hotkey(HotkeyAction.RewindOff)
+                return true
+            }
+            Hotkeys.action(selectHeld, code, down)?.let { if (hotkey(it)) return true }
             pads.onKey(event)
             return true
         }
@@ -295,7 +303,35 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
             if (!down && !event.isCanceled) show(PlayerPanel.Menu)
             return true
         }
+        if (code == KeyEvent.KEYCODE_MEDIA_REWIND && app.settings.value.rewind) {
+            Hotkeys.action(false, code, down)?.let { hotkey(it) }
+            return true
+        }
         pads.onRemoteKey(event)
+        return true
+    }
+
+    /** Runs a [Hotkeys] action; false when it doesn't apply (the key then goes to the game). */
+    private fun hotkey(action: HotkeyAction): Boolean {
+        if (!ui.started) return false
+        when (action) {
+            HotkeyAction.QuickSave -> js("save(${ui.slot})")
+            HotkeyAction.QuickLoad -> js("load(${ui.slot})")
+            HotkeyAction.RewindOn -> {
+                if (!app.settings.value.rewind) {
+                    toast("Turn on Rewind in Settings > Games first")
+                    return true
+                }
+                rewinding = true
+                js("rewind(true)")
+            }
+            HotkeyAction.RewindOff -> {
+                if (!rewinding) return false
+                rewinding = false
+                js("rewind(false)")
+            }
+            HotkeyAction.FastForward -> toggleFast()
+        }
         return true
     }
 

@@ -131,8 +131,9 @@ private fun MenuPanel(state: PlayerUiState, title: String, system: String, canPl
             MenuTile("⏻", "Exit game", actions::exit, Modifier.weight(1f))
         }
         Text(
-            "Controller: Select + Start opens this menu · Remote: Back or Menu. Without a controller the remote plays: " +
-                "D-pad, OK = A, Play/Pause = Start, Rewind = B, Fast-forward = X.",
+            "Controller: Select + Start opens this menu · Select + L1 quick save, Select + R1 quick load (slot $slot), " +
+                "hold Select + L2 to rewind, Select + R2 fast-forward. Remote: Back or Menu. Without a controller the remote plays: " +
+                "D-pad, OK = A, Play/Pause = Start, Rewind = B (or rewind, when it's on), Fast-forward = X.",
             color = TextDim, fontSize = 13.sp
         )
     }

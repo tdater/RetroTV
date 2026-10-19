@@ -137,6 +137,10 @@ fun SettingsScreen(onBack: () -> Unit, onNavigate: (Screen) -> Unit) {
                             "the remote or a controller. Each site can still use its own player (Menu ▸ Game player).")
                 }
                 item {
+                    ToggleRow("Rewind", prefs.rewind, { v -> set { it.copy(rewind = v) } },
+                        subtitle = "Hold Select + L2 (or the remote's Rewind key) to wind the game back. Uses more memory; leave off on slow TVs. Applies to the next game started.")
+                }
+                item {
                     var size by remember { mutableStateOf(app.games.cacheSize()) }
                     SettingRow("Downloaded games", "%.1f GB · Clear".format(Locale.US, size / 1e9), {
                         app.games.clearCache()
