@@ -13,28 +13,28 @@ import org.json.JSONObject
  * The game hook (assets/js/game-hook.js) in any frame: an EmulatorJS game is about to start.
  * When RetroTV's player is on here, the hook stops the site's emulator and hands the game over.
  */
-internal fun BrowserActivity.gameBridge(): Any = object {
+internal class GameBridge(private val a: BrowserActivity) {
     @JavascriptInterface
-    fun enabled(core: String): Boolean = playerActive && core.isNotBlank()
+    fun enabled(core: String): Boolean = a.playerActive && core.isNotBlank()
 
     @JavascriptInterface
     fun launch(json: String) {
-        handler.post { launchGame(json) }
+        a.handler.post { a.launchGame(json) }
     }
 
     @JavascriptInterface
     fun failed(message: String) {
-        handler.post { toast("Couldn't hand the game to RetroTV's player ($message) · Menu ▸ Game player: site") }
+        a.handler.post { a.toast("Couldn't hand the game to RetroTV's player ($message) · Menu ▸ Game player: site") }
     }
 
     @JavascriptInterface
-    fun blobOpen(name: String, size: Double): String = if (playerActive) app.games.blobOpen(name, size.toLong()).orEmpty() else ""
+    fun blobOpen(name: String, size: Double): String = if (a.playerActive) a.app.games.blobOpen(name, size.toLong()).orEmpty() else ""
 
     @JavascriptInterface
-    fun blobWrite(token: String, data: String) = app.games.blobWrite(token, data)
+    fun blobWrite(token: String, data: String) = a.app.games.blobWrite(token, data)
 
     @JavascriptInterface
-    fun blobClose(token: String): Boolean = app.games.blobClose(token)
+    fun blobClose(token: String): Boolean = a.app.games.blobClose(token)
 }
 
 internal fun BrowserActivity.launchGame(json: String) {
