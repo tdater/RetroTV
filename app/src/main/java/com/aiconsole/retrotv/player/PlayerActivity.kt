@@ -3,6 +3,7 @@ package com.aiconsole.retrotv.player
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
+import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.hardware.input.InputManager
 import android.os.Bundle
@@ -25,6 +26,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.ComposeView
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -133,6 +135,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         wv.setOnLongClickListener { true }
         wv.addJavascriptInterface(pads.Bridge(), "RetroTVPad")
         wv.addJavascriptInterface(PlayerBridge(), "RetroTVPlayer")
+        wv.addJavascriptInterface(SavesBridge(), "RetroTVSaves")
         if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
             WebViewCompat.addDocumentStartJavaScript(wv, VirtualPads.POLYFILL, setOf(GameFiles.ORIGIN))
         }
@@ -172,6 +175,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
             "core" to request.core,
             "name" to request.gameName.ifBlank { request.displayTitle },
             "key" to request.key,
+            "dir" to SaveNames.dirName(request.key),
             "color" to "#%06X".format(Locale.US, accent() and 0xFFFFFFL),
             "data" to GameFiles.EJS_DATA
         )
@@ -199,7 +203,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         if (panel != null) {
             pads.releaseAll()
             if (ui.started) js("pause(true)")
-            if (panel == PlayerPanel.Menu) js("slots()")
+            if (panel == PlayerPanel.Menu) refreshSlots()
         } else {
             webView?.requestFocus()
             if (was != null && ui.started) js("pause(false)")
@@ -328,8 +332,8 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         show(null)
     }
 
-    override fun nextSlot() {
-        ui.slot = ui.slot % 4 + 1
+    override fun selectSlot(slot: Int) {
+        ui.slot = slot.coerceIn(1, SaveNames.SLOTS)
     }
 
     override fun restart() {
@@ -402,7 +406,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
 
         @JavascriptInterface
         fun saved(slot: Int, ok: Boolean, message: String) = handler.post {
-            if (ok) ui.filledSlots = ui.filledSlots + slot else toast("Couldn't save: $message")
+            if (ok) refreshSlots() else toast("Couldn't save: $message")
         }
 
         @JavascriptInterface
@@ -411,9 +415,39 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         }
 
         @JavascriptInterface
-        fun slots(json: String) = handler.post {
-            ui.filledSlots = runCatching { JSONObject(json).keys().asSequence().mapNotNull { it.toIntOrNull() }.toSet() }.getOrDefault(emptySet())
-        }
+        fun slots(json: String) = handler.post { refreshSlots() }
+    }
+
+    /** Save uploads from the player page (binder threads); only this game's key is accepted. */
+    private inner class SavesBridge {
+        @JavascriptInterface
+        fun open(key: String, slot: Int, size: Long): String =
+            if (key == request.key) app.saves.open(key, slot, size).orEmpty() else ""
+
+        @JavascriptInterface
+        fun write(token: String, base64: String): Boolean = app.saves.write(token, base64)
+
+        @JavascriptInterface
+        fun close(token: String, pngBase64: String): Boolean = app.saves.close(token, pngBase64)
+
+        @JavascriptInterface
+        fun slots(key: String): String =
+            if (key != request.key) "{}" else JSONObject(app.saves.slots(key).mapKeys { it.key.toString() }).toString()
+    }
+
+    /** Re-reads the slots and their screenshots for the menu (decoded off the main thread). */
+    private fun refreshSlots() {
+        val key = request.key
+        Thread {
+            val times = app.saves.slots(key)
+            val thumbs = times.keys.mapNotNull { slot ->
+                app.saves.thumbnail(key, slot)?.let { f -> runCatching { BitmapFactory.decodeFile(f.path)?.asImageBitmap() }.getOrNull()?.let { slot to it } }
+            }.toMap()
+            handler.post {
+                ui.slotTimes = times
+                ui.thumbs = thumbs
+            }
+        }.start()
     }
 
     // ---- Lifecycle ----

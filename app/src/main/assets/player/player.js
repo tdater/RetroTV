@@ -1,6 +1,6 @@
 /*
  * RetroTV's built-in player: EmulatorJS with the game RetroTV prepared (see GameFiles.kt).
- * Query: core, game, bios, parent, patch, state, name, key, color, data (EmulatorJS folder),
+ * Query: core, game, bios, parent, patch, state, name, key, dir (save folder), color, data (EmulatorJS folder),
  * legacy=1 (WebGL 1 cores), threads=1. The app drives it through window.RetroPlayer and
  * hears back through the RetroTVPlayer bridge.
  */
@@ -40,7 +40,7 @@
   if (q.get('legacy') === '1') window.EJS_forceLegacyCores = true;
   window.EJS_threads = q.get('threads') === '1' && typeof SharedArrayBuffer === 'function' && self.crossOriginIsolated === true;
   window.EJS_ready = function () { tell('ready'); };
-  window.EJS_onGameStart = function () { tell('started'); };
+  window.EJS_onGameStart = function () { tell('started'); setTimeout(function () { window.RetroPlayer.migrate(); }, 1500); };
 
   // EmulatorJS shows errors in its own text box; pass them on so the app can offer a fallback.
   var watch = setInterval(function () {
@@ -68,9 +68,41 @@
     if (window.__retrotvPad || tries++ > 15) start(); else setTimeout(wait, 100);
   })();
 
-  // ---- Save slots, kept in this page's IndexedDB ----
+  // ---- Save slots: files in the app (RetroTVSaves bridge, read back from /save/<dir>/) ----
+  // Saves used to live in this page's IndexedDB; migrate() moves those over once.
 
   var key = q.get('key') || (window.EJS_core + '|' + window.EJS_gameUrl);
+  var dir = q.get('dir') || '';
+  var SAVES = window.RetroTVSaves || null;
+  var CHUNK = 384 * 1024; // bytes per bridge call (512 KB of base64)
+  var MAX_STATE = 64 * 1024 * 1024;
+
+  function b64(u8) {
+    var s = '';
+    for (var i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000));
+    return btoa(s);
+  }
+  function bytes(data) { return data instanceof Uint8Array ? data : new Uint8Array(data); }
+
+  /** Sends one state to the app; returns '' when saved, else the reason. */
+  function upload(slot, data, png) {
+    if (!SAVES) return 'Saving isn\'t available';
+    var u8 = bytes(data);
+    if (u8.length > MAX_STATE) return 'This game\'s save is too large (' + Math.round(u8.length / 1048576) + ' MB)';
+    var t = SAVES.open(key, slot, u8.length);
+    if (!t) return 'Couldn\'t start the save';
+    for (var i = 0; i < u8.length; i += CHUNK) {
+      if (!SAVES.write(t, b64(u8.subarray(i, i + CHUNK)))) { SAVES.close(t, ''); return 'The TV is out of storage'; }
+    }
+    return SAVES.close(t, png ? b64(bytes(png)) : '') ? '' : 'The TV is out of storage';
+  }
+  function filled() {
+    try { return JSON.parse(SAVES ? SAVES.slots(key) : '{}') || {}; } catch (e) { return {}; }
+  }
+  function screenshot(e) {
+    try { var p = e.gameManager.screenshot(); return p && p.length ? p : null; } catch (x) { return null; }
+  }
+
   function db() {
     return new Promise(function (resolve, reject) {
       var r = indexedDB.open('retrotv', 1);
@@ -89,6 +121,21 @@
       });
     });
   }
+  /** Moves this game's IndexedDB saves into empty app slots; an entry is deleted only once its upload succeeded. */
+  function migrate() {
+    if (!SAVES || !window.indexedDB) return;
+    var have = filled();
+    store('readonly', function (s) { return s.getAllKeys(); }).then(function (keys) {
+      (keys || []).forEach(function (k) {
+        var p = String(k).split('#');
+        var slot = p[p.length - 1];
+        if (p.slice(0, -1).join('#') !== key || have[slot]) return;
+        store('readonly', function (s) { return s.get(k); }).then(function (v) {
+          if (v && v.data && upload(Number(slot), v.data, null) === '') store('readwrite', function (s) { return s.delete(k); });
+        });
+      });
+    }).catch(function () {});
+  }
   function emu() {
     var e = window.EJS_emulator;
     if (!e || !e.started || !e.gameManager) throw new Error('The game is still starting');
@@ -97,34 +144,27 @@
 
   window.RetroPlayer = {
     save: function (slot) {
-      var data;
-      try { data = emu().gameManager.getState(); } catch (e) { tell('saved', slot, false, String(e.message || e)); return; }
-      store('readwrite', function (s) { return s.put({ data: data, at: Date.now() }, key + '#' + slot); })
-        .then(function () { show('Saved to slot ' + slot); tell('saved', slot, true, ''); })
-        .catch(function (e) { tell('saved', slot, false, String(e && e.message || e)); });
+      var e, data;
+      try { e = emu(); data = e.gameManager.getState(); } catch (x) { tell('saved', slot, false, String(x.message || x)); return; }
+      var err = upload(slot, data, screenshot(e));
+      if (err) { tell('saved', slot, false, err); return; }
+      show('Saved to slot ' + slot);
+      tell('saved', slot, true, '');
     },
     load: function (slot) {
       var e;
       try { e = emu(); } catch (x) { tell('loaded', slot, false, String(x.message)); return; }
-      store('readonly', function (s) { return s.get(key + '#' + slot); })
-        .then(function (v) {
-          if (!v || !v.data) { tell('loaded', slot, false, 'Slot ' + slot + ' is empty'); return; }
-          e.gameManager.loadState(new Uint8Array(v.data));
+      fetch('/save/' + dir + '/slot' + slot + '.state', { cache: 'no-store' })
+        .then(function (r) { return r.ok ? r.arrayBuffer() : null; })
+        .then(function (buf) {
+          if (!buf || !buf.byteLength) { tell('loaded', slot, false, 'Slot ' + slot + ' is empty'); return; }
+          e.gameManager.loadState(new Uint8Array(buf));
           show('Loaded slot ' + slot);
           tell('loaded', slot, true, '');
         })
         .catch(function (x) { tell('loaded', slot, false, String(x && x.message || x)); });
     },
-    slots: function () {
-      store('readonly', function (s) { return s.getAllKeys(); }).then(function (keys) {
-        var out = {};
-        (keys || []).forEach(function (k) {
-          var p = String(k).split('#');
-          if (p.slice(0, -1).join('#') === key) out[p[p.length - 1]] = true;
-        });
-        tell('slots', JSON.stringify(out));
-      }).catch(function () { tell('slots', '{}'); });
-    },
+    slots: function () { tell('slots', JSON.stringify(filled())); },
     restart: function () { try { emu().gameManager.restart(); show('Restarted'); } catch (e) {} },
     pause: function (on) { try { var e = emu(); if (on) e.pause(); else e.play(); } catch (x) {} },
     fast: function (on) { try { var e = emu(); e.isFastForward = !!on; e.gameManager.toggleFastForward(on ? 1 : 0); } catch (x) {} },
@@ -132,6 +172,7 @@
     flush: function () { try { emu().gameManager.saveSaveFiles(); } catch (e) {} },
     menu: function () { try { emu().menu.open(true); } catch (e) {} },
     hideMenu: function () { try { emu().menu.close(); } catch (e) {} },
+    migrate: migrate,
     note: show
   };
 })();

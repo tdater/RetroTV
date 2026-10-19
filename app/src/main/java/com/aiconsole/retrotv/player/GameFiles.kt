@@ -35,6 +35,7 @@ class GameFiles(context: Context) {
     private val appContext = context.applicationContext
     private val romDir = File(context.filesDir, "games").apply { mkdirs() }
     private val ejsDir = File(context.cacheDir, "emulatorjs")
+    private val saveDir = SaveStore.rootDir(context.filesDir)
 
     private sealed interface Source {
         data class Remote(val url: String, val referer: String, val userAgent: String, val cookie: String?) : Source
@@ -159,6 +160,7 @@ class GameFiles(context: Context) {
         return when {
             host == HOST && path.startsWith("/player/") -> serveAsset(path.removePrefix("/"), url.getQueryParameter("coi") == "1")
             host == HOST && path.startsWith("/rom/") -> serveRom(path, method)
+            host == HOST && path.startsWith("/save/") -> serveSave(path)
             host == HOST -> status(404, "Not Found")
             host == EJS_HOST && path.startsWith("/$EJS_VERSION/") -> serveEmulator(url.toString(), path)
             else -> null
@@ -199,6 +201,14 @@ class GameFiles(context: Context) {
                 }
             }
         }
+    }
+
+    /** `/save/<dir>/slot<N>.state|.png` from [SaveStore]; nothing else under it is reachable. */
+    private fun serveSave(path: String): WebResourceResponse {
+        val parts = path.removePrefix("/save/").split('/')
+        if (parts.size != 2 || !SaveNames.isDir(parts[0]) || !SaveNames.isServed(parts[1])) return status(404, "Not Found")
+        val file = File(File(saveDir, parts[0]), parts[1])
+        return if (file.isFile) fileResponse(file, false, mapOf("Cache-Control" to "no-store")) else status(404, "Not Found")
     }
 
     private fun serveEmulator(url: String, path: String): WebResourceResponse {

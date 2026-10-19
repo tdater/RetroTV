@@ -1,6 +1,11 @@
 package com.aiconsole.retrotv.player
 
+import android.text.format.DateUtils
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -21,12 +26,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.aiconsole.retrotv.ui.Ink
 import com.aiconsole.retrotv.ui.MenuTile
 import com.aiconsole.retrotv.ui.OverlayPanel
 import com.aiconsole.retrotv.ui.TextDim
+import com.aiconsole.retrotv.ui.TvClickable
 import com.aiconsole.retrotv.ui.TvButton
 import kotlinx.coroutines.delay
 
@@ -39,7 +48,9 @@ class PlayerUiState {
     var panel by mutableStateOf<PlayerPanel?>(null)
     var started by mutableStateOf(false)
     var slot by mutableIntStateOf(1)
-    var filledSlots by mutableStateOf(emptySet<Int>())
+    /** Filled slots → time saved, and their screenshots. */
+    var slotTimes by mutableStateOf(emptyMap<Int, Long>())
+    var thumbs by mutableStateOf(emptyMap<Int, ImageBitmap>())
     var muted by mutableStateOf(false)
     var fast by mutableStateOf(false)
     var pointer by mutableStateOf(false)
@@ -51,7 +62,7 @@ interface PlayerActions {
     fun resume()
     fun save()
     fun load()
-    fun nextSlot()
+    fun selectSlot(slot: Int)
     fun restart()
     fun toggleFast()
     fun toggleMute()
@@ -93,13 +104,15 @@ private fun MenuPanel(state: PlayerUiState, title: String, system: String, canPl
     OverlayPanel(title, Modifier.fillMaxSize(), widthFraction = 0.84f) {
         Text("$system · RetroTV player · game paused", color = TextDim, fontSize = 14.sp)
         val slot = state.slot
-        val used = if (slot in state.filledSlots) "saved" else "empty"
+        val used = if (slot in state.slotTimes) "saved" else "empty"
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             MenuTile("▶", "Resume", actions::resume, Modifier.weight(1f).focusRequester(first))
             MenuTile("💾", "Save to slot $slot", actions::save, Modifier.weight(1f))
             MenuTile("📂", "Load slot $slot ($used)", actions::load, Modifier.weight(1f))
-            MenuTile("🔢", "Slot $slot of 4 · change", actions::nextSlot, Modifier.weight(1f))
             MenuTile("↺", "Restart game", actions::restart, Modifier.weight(1f))
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            for (n in 1..SaveNames.SLOTS) SlotCard(n, n == slot, state.slotTimes[n], state.thumbs[n], { actions.selectSlot(n) }, Modifier.weight(1f))
         }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             MenuTile("⏩", if (state.fast) "Fast-forward: on" else "Fast-forward: off", actions::toggleFast, Modifier.weight(1f), selected = state.fast)
@@ -113,6 +126,31 @@ private fun MenuPanel(state: PlayerUiState, title: String, system: String, canPl
                 "D-pad, OK = A, Play/Pause = Start, Rewind = B, Fast-forward = X.",
             color = TextDim, fontSize = 13.sp
         )
+    }
+}
+
+/** One save slot: its screenshot (or "Empty") and when it was saved; OK selects it. */
+@Composable
+private fun SlotCard(n: Int, selected: Boolean, savedAt: Long?, thumb: ImageBitmap?, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val accent = MaterialTheme.colorScheme.primary
+    TvClickable(
+        onClick = onClick,
+        modifier = modifier,
+        shape = RoundedCornerShape(12.dp),
+        background = if (selected) accent.copy(alpha = 0.28f) else MaterialTheme.colorScheme.surface,
+        focusedBackground = if (selected) accent.copy(alpha = 0.45f) else MaterialTheme.colorScheme.surfaceVariant,
+        contentAlignment = Alignment.Center
+    ) {
+        Column(Modifier.padding(8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Box(Modifier.fillMaxWidth().aspectRatio(4f / 3f).background(Color.Black, RoundedCornerShape(8.dp)), contentAlignment = Alignment.Center) {
+                if (thumb != null) Image(thumb, "Slot $n", Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
+                else Text(if (savedAt != null) "Saved" else "Empty", color = TextDim, fontSize = 13.sp)
+            }
+            Text(
+                "Slot $n" + (savedAt?.let { " · " + DateUtils.getRelativeTimeSpanString(it, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS) } ?: ""),
+                color = Color.White, fontSize = 13.sp, maxLines = 1, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal
+            )
+        }
     }
 }
 
