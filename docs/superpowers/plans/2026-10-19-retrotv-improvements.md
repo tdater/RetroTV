@@ -24,7 +24,7 @@
 
 ## Roadmap
 
-Status 2026-10-19: phases 1-4 merged to main (each CI-green); phase 5 written on `claude/tv-ui` but not yet built: GitHub Actions stopped starting jobs (account billing/spending limit).
+Status 2026-10-19: all 5 phases merged to main, each CI-green. Not yet released.
 
 | Phase | Branch | Items | Depends on |
 |---|---|---|---|
