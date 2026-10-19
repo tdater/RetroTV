@@ -98,9 +98,10 @@ data class GameRequest(
     }
 }
 
-data class RecentGame(val request: GameRequest, val playedAt: Long)
+/** A game in the library: when it was last played, for how long in total, and how often. */
+data class RecentGame(val request: GameRequest, val playedAt: Long, val playMs: Long = 0, val plays: Int = 1, val favorite: Boolean = false)
 
-/** Games played in the built-in player, newest first (the home screen's "Recent games"). */
+/** Games played in the built-in player, newest first: "My games" and the home screen's "Recent games". */
 class GameLibrary(context: Context) {
 
     private val prefs = context.applicationContext.getSharedPreferences("games", Context.MODE_PRIVATE)
@@ -111,28 +112,36 @@ class GameLibrary(context: Context) {
         val a = JSONArray(prefs.getString("recent", "[]"))
         (0 until a.length()).mapNotNull { i ->
             val o = a.getJSONObject(i)
-            GameRequest.fromJson(o.getJSONObject("r"))?.let { RecentGame(it, o.optLong("t")) }
+            GameRequest.fromJson(o.getJSONObject("r"))?.let {
+                RecentGame(it, o.optLong("t"), playMs = o.optLong("ms"), plays = o.optInt("n", 1), favorite = o.optBoolean("fav"))
+            }
         }
     }.getOrDefault(emptyList())
 
     private fun save(list: List<RecentGame>) {
         _recent.value = list
         val a = JSONArray()
-        list.forEach { a.put(JSONObject().put("r", it.request.toJson()).put("t", it.playedAt)) }
+        list.forEach { a.put(JSONObject().put("r", it.request.toJson()).put("t", it.playedAt).put("ms", it.playMs).put("n", it.plays).put("fav", it.favorite)) }
         prefs.edit { putString("recent", a.toString()) }
     }
 
     fun record(request: GameRequest) {
         // A one-off blob token can't be replayed; the cached copy is recorded by the player instead.
         if (request.game.startsWith("blob:")) return
-        save((listOf(RecentGame(request, System.currentTimeMillis())) + _recent.value.filter { it.request.key != request.key }).take(MAX))
+        val old = _recent.value.firstOrNull { it.request.key == request.key }
+        val entry = RecentGame(request, System.currentTimeMillis(), old?.playMs ?: 0, (old?.plays ?: 0) + 1, old?.favorite ?: false)
+        save((listOf(entry) + _recent.value.filter { it.request.key != request.key }).take(MAX))
     }
+
+    fun addPlayTime(key: String, ms: Long) = save(_recent.value.map { if (it.request.key == key) it.copy(playMs = it.playMs + ms) else it })
+
+    fun setFavorite(key: String, on: Boolean) = save(_recent.value.map { if (it.request.key == key) it.copy(favorite = on) else it })
 
     fun remove(key: String) = save(_recent.value.filter { it.request.key != key })
 
     fun clear() = save(emptyList())
 
     private companion object {
-        const val MAX = 30
+        const val MAX = 300
     }
 }

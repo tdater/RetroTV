@@ -9,6 +9,7 @@ import android.hardware.input.InputManager
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.ViewGroup
@@ -68,6 +69,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
     private var triedLegacy = false
     private var selectHeld = false
     private var swallowKey = -1
+    private var resumedAt = 0L
 
     private val inputListener = object : InputManager.InputDeviceListener {
         override fun onInputDeviceAdded(deviceId: Int) = Unit
@@ -460,12 +462,17 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
 
     override fun onResume() {
         super.onResume()
+        resumedAt = SystemClock.elapsedRealtime()
         webView?.onResume()
         hideSystemBars()
         (getSystemService(Context.INPUT_SERVICE) as InputManager).registerInputDeviceListener(inputListener, handler)
     }
 
     override fun onPause() {
+        // Time on screen counts as play time (menus included); short visits don't.
+        val played = SystemClock.elapsedRealtime() - resumedAt
+        if (resumedAt > 0 && played >= 5_000) app.library.addPlayTime(request.key, played)
+        resumedAt = 0
         pads.releaseAll()
         js("flush()")
         if (ui.started && ui.panel == null) show(PlayerPanel.Menu)
