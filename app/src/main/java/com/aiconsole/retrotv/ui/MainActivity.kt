@@ -1,5 +1,6 @@
 package com.aiconsole.retrotv.ui
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
@@ -90,6 +91,8 @@ class MainActivity : ComponentActivity() {
     }
 
     // Any input resets the idle timer; the key that ends the attract mode does nothing else.
+    // RestrictedApi is lint's false positive on super.dispatchKeyEvent.
+    @SuppressLint("RestrictedApi", "GestureBackNavigation")
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         lastInput = SystemClock.uptimeMillis()
         if (attract.value) {
