@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#120e1f">
+<title>RetroTV phone link</title>
+<style>
+  :root { --bg: #120e1f; --panel: #1e1833; --ink: #fff; --dim: #a59fc0; --accent: #9c6bff; --hot: #c9a8ff; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font: 16px/1.4 system-ui, sans-serif; }
+  body { display: flex; flex-direction: column; overscroll-behavior: none; }
+  nav { display: flex; gap: 6px; padding: 8px; background: var(--panel); }
+  nav button { flex: 1; padding: 10px 4px; border: 0; border-radius: 10px; background: transparent; color: var(--dim); font: inherit; }
+  nav button.on { background: var(--accent); color: #fff; font-weight: 600; }
+  main { flex: 1; overflow: auto; }
+  section { display: none; padding: 16px; }
+  section.on { display: block; }
+  h2 { margin: 4px 0 8px; font-size: 18px; }
+  p { color: var(--dim); margin: 6px 0 12px; }
+  .btn { display: inline-block; padding: 12px 18px; border: 0; border-radius: 12px; background: var(--accent); color: #fff; font: inherit; font-weight: 600; text-decoration: none; }
+  .bar { height: 10px; border-radius: 6px; background: #2c2547; overflow: hidden; margin: 10px 0; }
+  .bar i { display: block; height: 100%; width: 0; background: var(--accent); }
+  .msg { margin-top: 8px; color: var(--hot); white-space: pre-line; }
+  #status { font-size: 13px; color: var(--dim); padding: 0 12px 6px; background: var(--panel); }
+
+  /* Controller */
+  #pad.on { display: grid; padding: 10px; height: 100%; touch-action: none; user-select: none; -webkit-user-select: none;
+    grid-template-columns: 1fr auto 1fr; grid-template-rows: auto 1fr; gap: 8px; }
+  .shoulders { grid-column: 1 / 4; display: flex; justify-content: space-between; gap: 8px; }
+  .shoulders div { display: flex; gap: 8px; }
+  .k { display: flex; align-items: center; justify-content: center; border-radius: 14px; background: var(--panel); color: var(--ink);
+    font-weight: 700; border: 2px solid #2f2750; }
+  .k.down { background: var(--accent); border-color: var(--hot); }
+  .sh { width: 70px; height: 44px; }
+  .cross, .face { display: grid; grid-template: repeat(3, 1fr) / repeat(3, 1fr); width: min(42vw, 230px); height: min(42vw, 230px); align-self: center; justify-self: center; }
+  .cross .k { border-radius: 10px; }
+  .face .k { border-radius: 50%; font-size: 20px; }
+  .mid { display: flex; flex-direction: column; justify-content: center; gap: 10px; }
+  .mid .k { width: 86px; height: 40px; font-size: 13px; }
+  .u { grid-area: 1 / 2; } .d { grid-area: 3 / 2; } .l { grid-area: 2 / 1; } .r { grid-area: 2 / 3; }
+  #full { position: fixed; right: 10px; bottom: 10px; padding: 6px 10px; font-size: 12px; opacity: .7; }
+</style>
+</head>
+<body>
+<nav>
+  <button data-tab="pad" class="on">🎮 Controller</button>
+  <button data-tab="send">⬆ Send a game</button>
+  <button data-tab="saves">💾 Saves</button>
+</nav>
+<div id="status">Connecting…</div>
+<main>
+  <section id="pad" class="on">
+    <div class="shoulders">
+      <div><div class="k sh" data-b="6">L2</div><div class="k sh" data-b="4">L1</div></div>
+      <div><div class="k sh" data-b="5">R1</div><div class="k sh" data-b="7">R2</div></div>
+    </div>
+    <div class="cross">
+      <div class="k u" data-b="12">▲</div><div class="k l" data-b="14">◀</div><div class="k r" data-b="15">▶</div><div class="k d" data-b="13">▼</div>
+    </div>
+    <div class="mid">
+      <div class="k" data-b="8">SELECT</div>
+      <div class="k" data-b="9">START</div>
+      <div class="k" data-m="1">MENU</div>
+    </div>
+    <div class="face">
+      <div class="k u" data-b="3">Y</div><div class="k l" data-b="2">X</div><div class="k r" data-b="1">B</div><div class="k d" data-b="0">A</div>
+    </div>
+    <button id="full" class="btn">Full screen</button>
+  </section>
+
+  <section id="send">
+    <h2>Send a game to the TV</h2>
+    <p>Pick ROM files on this phone. They go into RetroTV's game folder; the TV's Phone link screen lists them with a Play button. Up to 700 MB each.</p>
+    <label class="btn">Choose files<input id="files" type="file" multiple hidden></label>
+    <div class="bar"><i id="sendbar"></i></div>
+    <div id="sendmsg" class="msg"></div>
+  </section>
+
+  <section id="saves">
+    <h2>Saves and settings</h2>
+    <p>Keep a copy of every save, your sites and settings on this phone, or put a backup back on the TV.</p>
+    <a class="btn" href="backup.zip">Download backup</a>
+    <p></p>
+    <label class="btn">Restore a backup<input id="restore" type="file" accept=".zip,.json" hidden></label>
+    <div class="bar"><i id="restorebar"></i></div>
+    <div id="restoremsg" class="msg"></div>
+  </section>
+</main>
+<script>
+(function () {
+  var statusEl = document.getElementById('status');
+  document.querySelectorAll('nav button').forEach(function (b) {
+    b.onclick = function () {
+      document.querySelectorAll('nav button').forEach(function (x) { x.classList.toggle('on', x === b); });
+      document.querySelectorAll('section').forEach(function (s) { s.classList.toggle('on', s.id === b.dataset.tab); });
+    };
+  });
+
+  // ---- Controller over a WebSocket ----
+  var ws = null, retry = 500;
+  function connect() {
+    ws = new WebSocket(location.href.replace(/^http/, 'ws').replace(/[^/]*$/, '') + 'ws');
+    ws.onopen = function () {
+      retry = 500;
+      statusEl.textContent = 'Connected to the TV';
+      var name = (navigator.userAgent.match(/\(([^;)]+)/) || [])[1] || 'Phone';
+      ws.send('h,' + name);
+    };
+    ws.onmessage = function (e) { if (e.data.indexOf('s,') === 0) statusEl.textContent = e.data.slice(2); };
+    ws.onclose = function () {
+      statusEl.textContent = 'Not connected. Is the TV\'s phone link still on? Retrying…';
+      setTimeout(connect, retry);
+      retry = Math.min(retry * 2, 8000);
+    };
+  }
+  connect();
+  function send(m) { if (ws && ws.readyState === 1) ws.send(m); }
+
+  // Each finger holds at most one key; sliding onto another key moves the press (thumb rolls on the D-pad).
+  var held = {};
+  function keyAt(x, y) { var el = document.elementFromPoint(x, y); return el && el.closest ? el.closest('#pad .k') : null; }
+  function press(el, down) {
+    if (!el) return;
+    el.classList.toggle('down', down);
+    if (el.dataset.m) { if (down) send('m'); }
+    else send('b,' + el.dataset.b + ',' + (down ? 1 : 0));
+    if (down && navigator.vibrate) navigator.vibrate(12);
+  }
+  function track(e) {
+    if (!document.getElementById('pad').classList.contains('on')) return;
+    e.preventDefault();
+    var seen = {};
+    for (var i = 0; i < e.touches.length; i++) {
+      var t = e.touches[i], el = keyAt(t.clientX, t.clientY);
+      seen[t.identifier] = true;
+      if (held[t.identifier] !== el) { press(held[t.identifier], false); press(el, true); held[t.identifier] = el; }
+    }
+    Object.keys(held).forEach(function (id) { if (!seen[id]) { press(held[id], false); delete held[id]; } });
+  }
+  ['touchstart', 'touchmove', 'touchend', 'touchcancel'].forEach(function (ev) {
+    document.getElementById('pad').addEventListener(ev, track, { passive: false });
+  });
+  document.getElementById('full').onclick = function () {
+    var d = document.documentElement;
+    (d.requestFullscreen || d.webkitRequestFullscreen || function () {}).call(d);
+    if (screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(function () {});
+  };
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) Object.keys(held).forEach(function (id) { press(held[id], false); delete held[id]; });
+  });
+
+  // ---- Uploads ----
+  function upload(file, path, bar, msg, done) {
+    var x = new XMLHttpRequest();
+    x.open('POST', path);
+    x.upload.onprogress = function (e) { if (e.lengthComputable) bar.style.width = (100 * e.loaded / e.total) + '%'; };
+    x.onload = function () { done(x.status === 200, x.responseText || ('Error ' + x.status)); };
+    x.onerror = function () { done(false, 'The upload stopped. Is the TV still on?'); };
+    x.send(file);
+  }
+  document.getElementById('files').onchange = function (e) {
+    var files = Array.prototype.slice.call(e.target.files), msg = document.getElementById('sendmsg'), bar = document.getElementById('sendbar');
+    msg.textContent = '';
+    (function next() {
+      var f = files.shift();
+      if (!f) return;
+      bar.style.width = '0';
+      upload(f, 'upload?name=' + encodeURIComponent(f.name), bar, msg, function (ok, text) {
+        msg.textContent += (ok ? '✓ ' : '✗ ') + f.name + ': ' + text + '\n';
+        next();
+      });
+    })();
+    e.target.value = '';
+  };
+  document.getElementById('restore').onchange = function (e) {
+    var f = e.target.files[0];
+    if (!f) return;
+    upload(f, 'restore', document.getElementById('restorebar'), null, function (ok, text) {
+      document.getElementById('restoremsg').textContent = (ok ? '✓ ' : '✗ ') + text;
+    });
+    e.target.value = '';
+  };
+})();
+</script>
+</body>
+</html>

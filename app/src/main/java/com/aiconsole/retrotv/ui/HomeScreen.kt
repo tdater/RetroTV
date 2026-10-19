@@ -228,6 +228,7 @@ private fun Header(showClock: Boolean, onNavigate: (Screen) -> Unit, onGo: () ->
             item { TvButton("Go to a site", onGo, icon = "🔍") }
             item { TvButton("My games", { onNavigate(Screen.Library) }, icon = "🕹") }
             item { TvButton("Search all sites", { onNavigate(Screen.Search) }, icon = "🔎") }
+            item { TvButton("Phone link", { onNavigate(Screen.Phone) }, icon = "📱") }
             item { TvButton("Play a ROM file", onPlayRom, icon = "🎮") }
             item { TvButton("Emulators & downloads", { onNavigate(Screen.Downloads) }, icon = "⬇") }
             item { TvButton("Scripts", { onNavigate(Screen.Scripts) }, icon = "📜") }
