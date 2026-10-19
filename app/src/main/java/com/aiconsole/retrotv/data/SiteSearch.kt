@@ -23,10 +23,12 @@ object SiteSearch {
 
     fun url(site: Site, query: String, engine: UrlInput.SearchEngine): String {
         val q = URLEncoder.encode(query.trim(), "UTF-8")
-        val origin = URI(site.url).let { "${it.scheme}://${it.host}" }
-        PATHS[site.host]?.let { return origin + it.replace("{q}", q) }
+        // A user's own site may have an address java.net.URI rejects; it still gets a web search.
+        val uri = runCatching { URI(site.url) }.getOrNull()?.takeIf { it.host != null }
+            ?: return UrlInput.toUrl("site:${site.host} ${query.trim()}".trim(), engine)
+        PATHS[site.host]?.let { return "${uri.scheme}://${uri.host}" + it.replace("{q}", q) }
         if (site.host == "archive.org" && site.url.contains("/details/")) return site.url.substringBefore('?').trimEnd('/') + "?query=$q"
-        return UrlInput.toUrl("site:${URI(site.url).host} ${query.trim()}", engine)
+        return UrlInput.toUrl("site:${uri.host} ${query.trim()}", engine)
     }
 }
 
