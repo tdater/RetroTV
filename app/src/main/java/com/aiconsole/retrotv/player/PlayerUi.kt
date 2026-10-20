@@ -55,6 +55,7 @@ class PlayerUiState {
     var thumbs by mutableStateOf(emptyMap<Int, ImageBitmap>())
     var muted by mutableStateOf(false)
     var fast by mutableStateOf(false)
+    var stats by mutableStateOf(false)
     var pointer by mutableStateOf(false)
     var toast by mutableStateOf("")
     var toastId by mutableIntStateOf(0)
@@ -72,6 +73,7 @@ interface PlayerActions {
     fun restart()
     fun toggleFast()
     fun toggleMute()
+    fun toggleStats()
     fun emulatorMenu()
     fun openPlayers()
     fun openMenu()
@@ -135,6 +137,7 @@ private fun MenuPanel(state: PlayerUiState, title: String, system: String, canPl
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             MenuTile("⏩", if (state.fast) "Fast-forward: on" else "Fast-forward: off", actions::toggleFast, Modifier.weight(1f), selected = state.fast)
             MenuTile(if (state.muted) "🔇" else "🔊", if (state.muted) "Sound: off" else "Sound: on", actions::toggleMute, Modifier.weight(1f))
+            MenuTile("📈", if (state.stats) "Speed info: on" else "Speed info: off", actions::toggleStats, Modifier.weight(1f), selected = state.stats)
             MenuTile("🎮", "Players", actions::openPlayers, Modifier.weight(1f))
             MenuTile("🧪", "Cheats" + state.cheats.count { it.on }.let { if (it > 0) " ($it on)" else "" }, actions::openCheats, Modifier.weight(1f))
         }

@@ -151,6 +151,33 @@
     return e;
   }
 
+  // ---- Speed info: screen refreshes and emulated frames per second (a game should show ~60) ----
+
+  var statsEl = null, statsTimer = 0;
+  function stats(on, info) {
+    clearInterval(statsTimer);
+    if (statsEl) { statsEl.remove(); statsEl = null; }
+    if (!on) return;
+    statsEl = document.createElement('div');
+    statsEl.id = 'stats';
+    statsEl.textContent = 'measuring…';
+    document.body.appendChild(statsEl);
+    var frames = 0, last = performance.now(), lastFrame = null;
+    (function count() { if (!statsEl) return; frames++; requestAnimationFrame(count); })();
+    statsTimer = setInterval(function () {
+      var now = performance.now(), dt = (now - last) / 1000, e = window.EJS_emulator, game = '';
+      try {
+        var n = e.gameManager.getFrameNum();
+        if (lastFrame !== null) game = ' · game ' + ((n - lastFrame) / dt).toFixed(1) + ' fps';
+        lastFrame = n;
+      } catch (x) {}
+      var gl = e && e.supportsWebgl2 && e.webgl2Enabled ? 'WebGL 2' : 'WebGL 1';
+      statsEl.textContent = 'screen ' + (frames / dt).toFixed(0) + ' fps' + game + ' · ' + gl + ' · ' + (info || '');
+      frames = 0;
+      last = now;
+    }, 1000);
+  }
+
   window.RetroPlayer = {
     save: function (slot) {
       var e, data;
@@ -204,6 +231,7 @@
     controls: function () { try { emu().controlMenu.style.display = ''; } catch (e) {} },
     hideMenu: function () { try { emu().menu.close(); } catch (e) {} },
     migrate: migrate,
+    stats: stats,
     note: show
   };
 })();

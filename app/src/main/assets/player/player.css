@@ -29,3 +29,15 @@ html, body {
 .sharp canvas { image-rendering: crisp-edges; image-rendering: pixelated; }
 /* The pointer is off while playing, so EmulatorJS's own touch overlay and start hint stay hidden. */
 .ejs_virtualGamepad_parent { display: none !important; }
+#stats {
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  z-index: 9999;
+  background: rgba(0, 0, 0, 0.7);
+  color: #7CFC9A;
+  font: 15px monospace;
+  padding: 6px 10px;
+  border-radius: 8px;
+  pointer-events: none;
+}

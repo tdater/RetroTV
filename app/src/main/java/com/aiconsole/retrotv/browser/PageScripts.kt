@@ -93,8 +93,8 @@ object PageScripts {
     for (var i = 1; i < all.length; i++) all[i].remove();
     if (!m) { m = document.createElement('meta'); m.name = 'viewport'; head.appendChild(m); }
     // A change made while the page is still starting up can be dropped: force it again later.
-    if (force && m.content === want) m.content = want + ',';
     if (m.content !== want) m.content = want;
+    else if (force) head.appendChild(m); // re-inserting makes the browser read it again
   }
   apply();
   function again() { apply(true); }

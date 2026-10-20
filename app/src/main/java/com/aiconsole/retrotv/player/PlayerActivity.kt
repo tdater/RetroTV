@@ -14,6 +14,7 @@ import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.ViewGroup
 import android.view.WindowManager
+import android.webkit.ConsoleMessage
 import android.webkit.JavascriptInterface
 import android.webkit.RenderProcessGoneDetail
 import android.webkit.WebChromeClient
@@ -41,6 +42,7 @@ import com.aiconsole.retrotv.browser.CursorController
 import com.aiconsole.retrotv.browser.CursorView
 import com.aiconsole.retrotv.browser.RendererWatch
 import com.aiconsole.retrotv.browser.VirtualPads
+import com.aiconsole.retrotv.browser.WebConsole
 import com.aiconsole.retrotv.data.ACCENTS
 import com.aiconsole.retrotv.data.FreezeWatchdog
 import com.aiconsole.retrotv.link.PhonePads
@@ -68,6 +70,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
     private lateinit var cursorView: CursorView
     private lateinit var cursor: CursorController
     private var webView: WebView? = null
+    private var displayHz = 0f
     private var legacy = false
     private var triedLegacy = false
     private var selectHeld = false
@@ -91,6 +94,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
             return
         }
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        displayHz = runCatching { DisplayModes.preferSixtyHz(this) }.getOrDefault(0f)
         WindowCompat.setDecorFitsSystemWindows(window, false)
         hideSystemBars()
 
@@ -147,6 +151,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         wv.isLongClickable = false
         wv.setOnLongClickListener { true }
         wv.addJavascriptInterface(pads.Bridge(), "RetroTVPad")
+        pads.attach(wv)
         wv.addJavascriptInterface(PlayerBridge(), "RetroTVPlayer")
         wv.addJavascriptInterface(SavesBridge(), "RetroTVSaves")
         if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
@@ -171,7 +176,11 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
                 return true
             }
         }
-        wv.webChromeClient = WebChromeClient()
+        wv.webChromeClient = object : WebChromeClient() {
+            private val console = WebConsole("Player")
+
+            override fun onConsoleMessage(message: ConsoleMessage): Boolean = console.log(message)
+        }
         webView = wv
         return wv
     }
@@ -412,6 +421,15 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
     override fun toggleFast() {
         ui.fast = !ui.fast
         js("fast(${ui.fast})")
+    }
+
+    override fun toggleStats() {
+        ui.stats = !ui.stats
+        val webViewVersion = runCatching { WebViewCompat.getCurrentWebViewPackage(this)?.versionName?.substringBefore('.') }.getOrNull() ?: "?"
+        val metrics = resources.displayMetrics
+        val info = "display %.0f Hz %d×%d · WebView %s".format(Locale.US, displayHz, metrics.widthPixels, metrics.heightPixels, webViewVersion)
+        js("stats(${ui.stats}, ${JSONObject.quote(info)})")
+        if (ui.stats) show(null)
     }
 
     override fun toggleMute() {

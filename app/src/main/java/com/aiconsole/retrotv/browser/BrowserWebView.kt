@@ -60,6 +60,7 @@ internal fun BrowserActivity.createWebView() {
     wv.isLongClickable = false
     wv.isHapticFeedbackEnabled = false
     wv.addJavascriptInterface(pads.Bridge(), "RetroTVPad")
+    pads.attach(wv)
     wv.addJavascriptInterface(FilesBridge(this), "RetroTVFiles")
     wv.addJavascriptInterface(GameBridge(this), "RetroTVGame")
     wv.addJavascriptInterface(ViewBridge(this), "RetroTVView")

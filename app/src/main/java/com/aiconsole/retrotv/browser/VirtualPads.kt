@@ -1,25 +1,92 @@
 package com.aiconsole.retrotv.browser
 
+import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
 import android.view.InputDevice
 import android.view.KeyEvent
-import android.os.SystemClock
 import android.view.MotionEvent
 import android.webkit.JavascriptInterface
+import android.webkit.WebView
+import androidx.webkit.JavaScriptReplyProxy
+import androidx.webkit.WebViewCompat
+import androidx.webkit.WebViewFeature
 import com.aiconsole.retrotv.web.Gamepad
 import java.util.Locale
+import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.abs
 
 /**
  * Up to four virtual "standard" gamepads fed from Android controller events and read by pages
- * through [POLYFILL] (`navigator.getGamepads()`). The JS bridge is visible in every frame, so
- * emulators inside iframes see the pads too, whatever the device's WebView supports natively.
+ * through [POLYFILL] (`navigator.getGamepads()`), in every frame, so emulators inside iframes see
+ * the pads too, whatever the device's WebView supports natively.
+ *
+ * State is pushed: every change is posted to each frame's `RetroTVPadPort` ([attach]), and
+ * `getGamepads()` reads the page's own copy. Emulators call it 100+ times a second, and a
+ * synchronous JS-bridge call each time stalled the emulator's thread (choppy video and sound).
+ * WebViews without message listeners fall back to [Bridge.state], which returns a prebuilt string.
  */
 class VirtualPads {
 
     private class Pad(val name: String, val remote: Boolean = false) {
+        val label = name.replace(Regex("[~|]"), " ")
         val buttons = FloatArray(17)
         val axes = FloatArray(4)
         var timestamp = 0L
+    }
+
+    /** The current state as sent to pages (see [Bridge.state] for the format). */
+    @Volatile
+    private var snapshot = ""
+    private val ports = CopyOnWriteArrayList<JavaScriptReplyProxy>()
+    private val main = Handler(Looper.getMainLooper())
+    private val sendPending = AtomicBoolean(false)
+    private val send = Runnable {
+        sendPending.set(false)
+        val s = snapshot
+        ports.forEach { runCatching { it.postMessage(s) } }
+    }
+
+    /**
+     * Lets [wv]'s frames receive pad changes (call before loading a page). Returns false on
+     * WebViews without message listeners; the polyfill then reads [Bridge.state].
+     */
+    fun attach(wv: WebView): Boolean {
+        if (!WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) return false
+        ports.clear()
+        return runCatching {
+            WebViewCompat.addWebMessageListener(wv, "RetroTVPadPort", setOf("*")) { _, message, _, _, reply ->
+                when (message.data) {
+                    "hello" -> {
+                        // One per document; old documents' proxies are dropped after a while.
+                        ports.add(reply)
+                        while (ports.size > 16) ports.removeAt(0)
+                        runCatching { reply.postMessage(snapshot) }
+                    }
+                    "poll" -> lastPollAt = SystemClock.uptimeMillis()
+                }
+            }
+            true
+        }.getOrDefault(false)
+    }
+
+    /** Rebuilds [snapshot] after a change and sends it to every frame (once per main-loop turn). */
+    private fun publish() {
+        snapshot = synchronized(lock) { build() }
+        if (ports.isNotEmpty() && sendPending.compareAndSet(false, true)) main.post(send)
+    }
+
+    private fun build(): String = buildString {
+        pads.forEachIndexed { slot, p ->
+            if (p == null) return@forEachIndexed
+            if (isNotEmpty()) append('|')
+            append(slot).append('~').append(p.label).append('~')
+            append(p.timestamp / 1_000_000).append('~')
+            p.buttons.joinTo(this, ",") { if (it == 0f) "0" else if (it == 1f) "1" else String.format(Locale.US, "%.3f", it) }
+            append('~')
+            p.axes.joinTo(this, ",") { if (it == 0f) "0" else String.format(Locale.US, "%.3f", it) }
+        }
     }
 
     private val lock = Any()
@@ -79,6 +146,7 @@ class VirtualPads {
             p.buttons[i] = if (event.action == KeyEvent.ACTION_DOWN) 1f else 0f
             p.timestamp = System.nanoTime()
         }
+        publish()
         return true
     }
 
@@ -129,6 +197,7 @@ class VirtualPads {
             slots.putAll(next)
             moved.copyInto(pads)
         }
+        publish()
     }
 
     /** Records a controller key. Returns false when it isn't a gamepad button. */
@@ -148,6 +217,7 @@ class VirtualPads {
             p.buttons[i] = if (event.action == KeyEvent.ACTION_DOWN) 1f else 0f
             p.timestamp = System.nanoTime()
         }
+        publish()
         return true
     }
 
@@ -183,6 +253,7 @@ class VirtualPads {
             }
             p.timestamp = System.nanoTime()
         }
+        publish()
         return true
     }
 
@@ -194,6 +265,7 @@ class VirtualPads {
             p.buttons[button] = value
             p.timestamp = System.nanoTime()
         }
+        publish()
         return true
     }
 
@@ -205,15 +277,20 @@ class VirtualPads {
             p.axes[1] = y
             p.timestamp = System.nanoTime()
         }
+        publish()
     }
 
-    fun releaseAll() = synchronized(lock) {
-        pads.forEach { p -> p?.buttons?.fill(0f); p?.axes?.fill(0f) }
+    fun releaseAll() {
+        synchronized(lock) { pads.forEach { p -> p?.buttons?.fill(0f); p?.axes?.fill(0f) } }
+        publish()
     }
 
-    fun forget(deviceId: Int) = synchronized(lock) {
-        slots.remove(deviceId)?.let { pads[it] = null }
-        hat.remove(deviceId)
+    fun forget(deviceId: Int) {
+        synchronized(lock) {
+            slots.remove(deviceId)?.let { pads[it] = null }
+            hat.remove(deviceId)
+        }
+        publish()
     }
 
     val connectedCount: Int get() = synchronized(lock) { pads.count { it != null && !it.remote } }
@@ -229,19 +306,7 @@ class VirtualPads {
 
         /** Same as [state] without counting as the page reading pads (connect/disconnect events). */
         @JavascriptInterface
-        fun peek(): String = synchronized(lock) {
-            buildString {
-                pads.forEachIndexed { slot, p ->
-                    if (p == null) return@forEachIndexed
-                    if (isNotEmpty()) append('|')
-                    append(slot).append('~').append(p.name.replace(Regex("[~|]"), " ")).append('~')
-                    append(p.timestamp / 1_000_000).append('~')
-                    p.buttons.joinTo(this, ",") { if (it == 0f) "0" else if (it == 1f) "1" else String.format(Locale.US, "%.3f", it) }
-                    append('~')
-                    p.axes.joinTo(this, ",") { if (it == 0f) "0" else String.format(Locale.US, "%.3f", it) }
-                }
-            }
-        }
+        fun peek(): String = snapshot
     }
 
     companion object {
@@ -264,6 +329,23 @@ class VirtualPads {
   if (window.__retrotvPad || typeof RetroTVPad === 'undefined') return;
   window.__retrotvPad = true;
   var cache = null, cacheAt = 0, known = {};
+  // Pushed state (RetroTVPadPort): getGamepads() never calls into the app.
+  var port = null, pushed = [null, null, null, null], pollSent = 0;
+  function parse(s) {
+    var out = [null, null, null, null];
+    if (s) s.split('|').forEach(function (p) {
+      var f = p.split('~'); var slot = +f[0];
+      out[slot] = makePad(slot, f[1], +f[2], f[3].split(','), f[4].split(','));
+    });
+    return out;
+  }
+  function connect() {
+    if (port || typeof RetroTVPadPort === 'undefined') return port;
+    port = RetroTVPadPort;
+    port.onmessage = function (e) { pushed = parse(String(e.data)); };
+    port.postMessage('hello');
+    return port;
+  }
   function makePad(slot, name, ts, b, a) {
     var buttons = b.map(function (v) { var n = +v; return { pressed: n > 0.5, touched: n > 0, value: n }; });
     return {
@@ -274,15 +356,17 @@ class VirtualPads {
   }
   function read(peek) {
     var now = performance.now();
-    if (cache && now - cacheAt < 4) return cache;
-    var out = [null, null, null, null], s = '';
+    if (connect()) {
+      // Tell the app (at most once a second) that the page reads pads, for Auto controller mode.
+      if (!peek && now - pollSent > 1000) { pollSent = now; port.postMessage('poll'); }
+      return pushed;
+    }
+    if (cache && now - cacheAt < 8) return cache;
+    var s = '';
     try { s = peek ? RetroTVPad.peek() : RetroTVPad.state(); } catch (e) {}
-    if (s) s.split('|').forEach(function (p) {
-      var f = p.split('~'); var slot = +f[0];
-      out[slot] = makePad(slot, f[1], +f[2], f[3].split(','), f[4].split(','));
-    });
-    cache = out; cacheAt = now; return out;
+    cache = parse(s); cacheAt = now; return cache;
   }
+  connect();
   try {
     Object.defineProperty(Navigator.prototype, 'getGamepads', { value: function () { return read(); }, configurable: true, writable: true });
   } catch (e) { navigator.getGamepads = function () { return read(); }; }

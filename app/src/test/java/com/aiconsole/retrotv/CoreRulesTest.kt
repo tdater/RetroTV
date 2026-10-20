@@ -4,6 +4,7 @@ import com.aiconsole.retrotv.data.ControllerMode
 import com.aiconsole.retrotv.data.Prefs
 import com.aiconsole.retrotv.data.UrlInput
 import com.aiconsole.retrotv.data.ViewMode
+import com.aiconsole.retrotv.player.DisplayRules
 import com.aiconsole.retrotv.player.Systems
 import com.aiconsole.retrotv.downloads.Emulators
 import com.aiconsole.retrotv.web.AdBlock
@@ -266,5 +267,20 @@ class PrefsDefaultsTest {
         assertEquals(ControllerMode.Auto, Prefs().controllerMode)
         assertTrue(Prefs().builtInPlayer)
         assertTrue(ViewMode.Desktop.viewportWidth > ViewMode.Mobile.viewportWidth)
+    }
+}
+
+class DisplayRulesTest {
+
+    private fun m(id: Int, hz: Float, w: Int = 1920, h: Int = 1080) = DisplayRules.Mode(id, w, h, hz)
+
+    @Test
+    fun picksSixtyHzOnlyWhenNeeded() {
+        val modes = listOf(m(1, 50f), m(2, 59.94f), m(3, 60f), m(4, 120f), m(5, 60f, 3840, 2160))
+        assertNull(DisplayRules.sixtyHz(m(3, 60f), modes))
+        assertNull(DisplayRules.sixtyHz(m(2, 59.94f), modes))
+        assertEquals(3, DisplayRules.sixtyHz(m(1, 50f), modes)?.id)
+        assertEquals(3, DisplayRules.sixtyHz(m(4, 120f), modes)?.id)
+        assertNull(DisplayRules.sixtyHz(m(9, 50f, 1280, 720), modes))
     }
 }

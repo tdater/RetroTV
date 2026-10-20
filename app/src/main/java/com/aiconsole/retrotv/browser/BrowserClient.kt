@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.net.Uri
 import android.util.Base64
 import android.view.View
+import android.webkit.ConsoleMessage
 import android.view.ViewGroup
 import android.webkit.RenderProcessGoneDetail
 import android.webkit.WebChromeClient
@@ -117,6 +118,10 @@ internal fun BrowserActivity.browserClient(): WebViewClient = object : WebViewCl
 }
 
 internal fun BrowserActivity.browserChrome(): WebChromeClient = object : WebChromeClient() {
+
+    private val console = WebConsole("Page")
+
+    override fun onConsoleMessage(message: ConsoleMessage): Boolean = console.log(message)
 
     override fun onProgressChanged(view: WebView, newProgress: Int) {
         ui.progress = newProgress
