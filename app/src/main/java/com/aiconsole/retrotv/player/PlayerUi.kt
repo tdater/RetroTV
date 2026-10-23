@@ -43,7 +43,7 @@ sealed interface PlayerPanel {
     data object Menu : PlayerPanel
     data object Players : PlayerPanel
     data object Cheats : PlayerPanel
-    data class Failed(val message: String) : PlayerPanel
+    data class Failed(val message: String, val hint: String = "") : PlayerPanel
 }
 
 class PlayerUiState {
@@ -111,7 +111,7 @@ fun PlayerOverlay(state: PlayerUiState, title: String, system: String, canPlayOn
             PlayerPanel.Menu -> MenuPanel(state, title, system, canPlayOnSite, actions)
             PlayerPanel.Players -> PlayersPanel(state, actions)
             PlayerPanel.Cheats -> CheatsPanel(state.cheats, actions::toggleCheat, actions::deleteCheat, actions::addCheats) { actions.openMenu() }
-            is PlayerPanel.Failed -> FailedPanel(p.message, canPlayOnSite, actions)
+            is PlayerPanel.Failed -> FailedPanel(p.message, p.hint, canPlayOnSite, actions)
         }
     }
 }
@@ -203,13 +203,13 @@ private fun PlayersPanel(state: PlayerUiState, actions: PlayerActions) {
 }
 
 @Composable
-private fun FailedPanel(message: String, canPlayOnSite: Boolean, actions: PlayerActions) {
+private fun FailedPanel(message: String, hint: String, canPlayOnSite: Boolean, actions: PlayerActions) {
     val first = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { first.requestFocus() } }
     OverlayPanel("This game didn't start", Modifier.fillMaxSize(), widthFraction = 0.6f) {
         Text(message.ifBlank { "The emulator reported an error." }, color = Color.White, fontSize = 16.sp)
         Text(
-            if (canPlayOnSite) "The site's own player may still run it." else "Check the file and the system it was opened as.",
+            hint.ifBlank { if (canPlayOnSite) "The site's own player may still run it." else "Check the file and the system it was opened as." },
             color = TextDim, fontSize = 14.sp
         )
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {

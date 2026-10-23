@@ -72,7 +72,11 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
     private var webView: WebView? = null
     private var displayHz = 0f
     private var legacy = false
-    private var triedLegacy = false
+    private var noThreads = false
+    /** The start number in the [RetryPlan] ladder (1 = first). */
+    private var attempt = 1
+    /** Whether the player page is cross-origin isolated (threaded cores need it); null until the page says. */
+    private var isolated: Boolean? = null
     private var selectHeld = false
     private var swallowKey = -1
     private var resumedAt = 0L
@@ -192,7 +196,8 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
             show(PlayerPanel.Failed("The game file isn't available any more. Open it from the site again."))
             return
         }
-        val threads = Systems.needsThreads(request.core)
+        val threads = Systems.needsThreads(request.core) && !noThreads
+        isolated = null
         val query = linkedMapOf(
             "core" to request.core,
             "name" to request.gameName.ifBlank { request.displayTitle },
@@ -514,6 +519,10 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
 
     override fun retry() {
         ui.panel = null
+        // A manual retry starts the ladder over.
+        attempt = 1
+        legacy = false
+        noThreads = false
         loadGame()
     }
 
@@ -536,17 +545,10 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         }
 
         @JavascriptInterface
-        fun failed(message: String) = handler.post {
-            if (!legacy && !triedLegacy) {
-                // Older TV GPUs often fail the WebGL 2 cores: try the compatible ones once.
-                triedLegacy = true
-                legacy = true
-                toast("Trying compatibility mode…")
-                loadGame()
-            } else {
-                show(PlayerPanel.Failed(message))
-            }
-        }
+        fun isolated(ok: Boolean) = handler.post { isolated = ok }
+
+        @JavascriptInterface
+        fun failed(message: String) = handler.post { onStartFailed(message) }
 
         @JavascriptInterface
         fun saved(slot: Int, ok: Boolean, message: String) = handler.post {
@@ -560,6 +562,38 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
 
         @JavascriptInterface
         fun slots(json: String) = handler.post { refreshSlots() }
+    }
+
+    /** The game didn't start: walk the [RetryPlan] ladder, then show the failure with its buttons. */
+    private fun onStartFailed(message: String) {
+        val problem = app.games.takeProblem()
+        if (problem != null) {
+            // The site sent a web page / error instead of the game: retrying the cores can't help.
+            show(PlayerPanel.Failed(problem, "Try again fetches the file anew. The site's own player may still run it."))
+            return
+        }
+        val threaded = Systems.needsThreads(request.core) && !noThreads
+        val iso = isolated ?: true
+        when (RetryPlan.next(attempt + 1, threaded, iso)) {
+            RetryStep.Legacy -> {
+                // Older TV GPUs often fail the WebGL 2 cores: try the compatible ones.
+                attempt++
+                legacy = true
+                toast("Trying compatibility mode…")
+                loadGame()
+            }
+            RetryStep.NoThreads -> {
+                attempt++
+                noThreads = true
+                toast("Trying without threads…")
+                loadGame()
+            }
+            else -> if (threaded && !iso) {
+                show(PlayerPanel.Failed(RetryPlan.NO_THREADS_MESSAGE, "Update Android System WebView, or play on the site."))
+            } else {
+                show(PlayerPanel.Failed(message))
+            }
+        }
     }
 
     /** Save uploads from the player page (binder threads); only this game's key is accepted. */

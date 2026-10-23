@@ -1,6 +1,7 @@
 package com.aiconsole.retrotv.browser
 
 import android.os.SystemClock
+import android.util.Log
 import android.webkit.JavascriptInterface
 import com.aiconsole.retrotv.data.UrlInput
 import com.aiconsole.retrotv.player.GameRequest
@@ -18,14 +19,32 @@ internal class GameBridge(private val a: BrowserActivity) {
     @JavascriptInterface
     fun enabled(core: String): Boolean = a.playerActive && core.isNotBlank()
 
+    @Volatile
+    private var lastFailed = false
+
+    /**
+     * Returns false when the player can't take this game (the hook then restores the site's own
+     * emulator in that frame); true when the hand-over is under way ([launchFailed] reports a later failure).
+     */
     @JavascriptInterface
-    fun launch(json: String) {
-        a.handler.post { a.launchGame(json) }
+    fun launch(json: String): Boolean {
+        if (!a.playerActive) return false
+        if (a.handOffGame(json) == null) {
+            a.handler.post { a.useSitePlayer("the game's file can't be read") }
+            return false
+        }
+        lastFailed = false
+        a.handler.post { if (!a.launchGame(json)) lastFailed = true }
+        return true
     }
+
+    /** True once when the player failed to open after [launch] said yes. */
+    @JavascriptInterface
+    fun launchFailed(): Boolean = lastFailed.also { lastFailed = false }
 
     @JavascriptInterface
     fun failed(message: String) {
-        a.handler.post { a.toast("Couldn't hand the game to RetroTV's player ($message) · Menu ▸ Game player: site") }
+        a.handler.post { a.useSitePlayer(message) }
     }
 
     @JavascriptInterface
@@ -38,18 +57,47 @@ internal class GameBridge(private val a: BrowserActivity) {
     fun blobClose(token: String): Boolean = a.app.games.blobClose(token)
 }
 
-internal fun BrowserActivity.launchGame(json: String) {
+private fun BrowserActivity.handOffFile(value: String?): String? = when {
+    value == null -> null
+    value.startsWith("blob:") -> app.games.blobFile(value.removePrefix("blob:"))?.let { "file:" + it.absolutePath }
+    value.startsWith("http://") || value.startsWith("https://") -> value
+    else -> null // data: URLs and the like can't be fetched natively
+}
+
+/** The player-readable game file of a hand-over, or null when the player can't take it. Any thread. */
+internal fun BrowserActivity.handOffGame(json: String): String? {
+    val o = runCatching { JSONObject(json) }.getOrNull() ?: return null
+    return handOffFile(o.optString("game").takeIf { it.isNotEmpty() && it != "null" })
+}
+
+/**
+ * The hand-over failed: this site plays with its own emulator from now on (until Menu ▸ Game
+ * player is switched back), and the page's stopped loader is run again.
+ */
+internal fun BrowserActivity.useSitePlayer(reason: String) {
+    Log.w("GameHandoff", "Using the site's player: $reason")
+    if (ui.host.isNotBlank()) sitePlayer += ui.host
+    playerActive = false
+    ui.gamePlayer = false
+    toast("Playing with the site's own player")
+    webView?.evaluateJavascript("window.__retrotvRestore && window.__retrotvRestore()", null)
+}
+
+/** Opens the player for a hand-over; false when that failed (the site's own player is then restored). */
+internal fun BrowserActivity.launchGame(json: String): Boolean {
     val now = SystemClock.uptimeMillis()
-    if (!playerActive || isFinishing || now - lastLaunch < 3000) return
-    val o = runCatching { JSONObject(json) }.getOrNull() ?: return
-    fun opt(key: String) = o.optString(key).takeIf { it.isNotEmpty() && it != "null" }
-    fun file(value: String?): String? = when {
-        value == null -> null
-        value.startsWith("blob:") -> app.games.blobFile(value.removePrefix("blob:"))?.let { "file:" + it.absolutePath }
-        value.startsWith("http://") || value.startsWith("https://") -> value
-        else -> null
+    // Not ours, or the same Play pressed twice: the first launch is already on its way.
+    if (!playerActive || isFinishing || now - lastLaunch < 3000) return true
+    val o = runCatching { JSONObject(json) }.getOrNull() ?: run {
+        useSitePlayer("unreadable hand-over")
+        return false
     }
-    val game = file(opt("game")) ?: return toast("RetroTV's player couldn't read this game's file")
+    fun opt(key: String) = o.optString(key).takeIf { it.isNotEmpty() && it != "null" }
+    fun file(value: String?): String? = handOffFile(value)
+    val game = file(opt("game")) ?: run {
+        useSitePlayer("the game's file can't be read")
+        return false
+    }
     lastLaunch = now
     // An embed frame's title is often just "Play"; the page's own title names the game better.
     val frameTitle = opt("title")?.takeIf { o.optBoolean("top") || (it.length > 4 && !it.startsWith("Play", ignoreCase = true)) }
@@ -72,10 +120,12 @@ internal fun BrowserActivity.launchGame(json: String) {
     UrlInput.host(request.page)?.let { host ->
         if (host !in settings.value.playerHosts) settings.update { it.copy(playerHosts = it.playerHosts + host) }
     }
-    try {
+    return try {
         player.launch(PlayerActivity.intent(this, request))
+        true
     } catch (e: Exception) {
-        toast("Couldn't open the player: ${e.message}")
+        useSitePlayer("couldn't open the player: ${e.message}")
+        false
     }
 }
 

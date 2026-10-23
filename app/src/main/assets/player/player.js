@@ -43,26 +43,44 @@
   if (q.get('legacy') === '1') window.EJS_forceLegacyCores = true;
   window.EJS_threads = q.get('threads') === '1' && typeof SharedArrayBuffer === 'function' && self.crossOriginIsolated === true;
   window.EJS_ready = function () { tell('ready'); };
-  window.EJS_onGameStart = function () { tell('started'); setTimeout(function () { window.RetroPlayer.migrate(); }, 1500); };
+  window.EJS_onGameStart = function () { window.__retrotvStarted = true; tell('started'); setTimeout(function () { window.RetroPlayer.migrate(); }, 1500); };
 
   // EmulatorJS shows errors in its own text box; pass them on so the app can offer a fallback.
+  // It depends on EmulatorJS internals (failedToStart, textElem), so a 45 s watchdog backs it up:
+  // no start and no change in the emulator's status text (download percentages count) is a failure.
+  tell('isolated', self.crossOriginIsolated === true);
+  var STALL_MS = 45000;
+  var began = Date.now(), lastText = '', lastChange = began, begun = false;
+  function fail(msg) {
+    if (begun) return;
+    begun = true;
+    clearInterval(watch);
+    tell('failed', msg || 'The game failed to start');
+  }
   var watch = setInterval(function () {
-    var e = window.EJS_emulator;
-    if (!e) return;
+    if (begun) return;
+    var e = window.EJS_emulator, now = Date.now();
+    if (!e) {
+      if (now - began > STALL_MS) fail('The emulator did not load in time. Check the internet connection.');
+      return;
+    }
+    var text = '';
+    try { text = (e.textElem && e.textElem.innerText) || ''; } catch (x) {}
+    if (text !== lastText) { lastText = text; lastChange = now; }
     if (e.failedToStart) {
+      fail(text);
+    } else if (e.started || window.__retrotvStarted) {
+      begun = true;
       clearInterval(watch);
-      var msg = '';
-      try { msg = (e.textElem && e.textElem.innerText) || ''; } catch (x) {}
-      tell('failed', msg || 'The game failed to start');
-    } else if (e.started) {
-      clearInterval(watch);
+    } else if (now - lastChange > STALL_MS) {
+      fail('The game did not start within 45 seconds' + (text ? ' (' + text + ')' : '') + '.');
     }
   }, 400);
 
   function start() {
     var s = document.createElement('script');
     s.src = window.EJS_pathtodata + 'loader.js';
-    s.onerror = function () { tell('failed', 'Could not download the emulator. Check the internet connection.'); };
+    s.onerror = function () { fail('Could not download the emulator. Check the internet connection.'); };
     document.body.appendChild(s);
   }
   // Wait briefly for the app's gamepad bridge (document-start script) so pads are seen at once.

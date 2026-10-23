@@ -18,6 +18,7 @@
   var taken = false;   // this attempt was handed to RetroTV
   var passive = false; // RetroTV's player is off here: never interfere
   var loaderSeen = false;
+  var loaderSrc = '';  // the site's loader.js, to run again if the hand-over fails
   var LOADER = /(^|\/)(loader|emulator(\.min)?)\.js([?#]|$)/i;
   var START = /(^|\/)loader\.js([?#]|$)/i;
   var takenAt = 0;
@@ -25,7 +26,12 @@
   function hasLoader() {
     if (loaderSeen) return true;
     var s = document.getElementsByTagName('script');
-    for (var i = 0; i < s.length; i++) if (LOADER.test(s[i].src || '')) return (loaderSeen = true);
+    for (var i = 0; i < s.length; i++) {
+      if (LOADER.test(s[i].src || '')) {
+        if (START.test(s[i].src)) loaderSrc = s[i].src;
+        return (loaderSeen = true);
+      }
+    }
     return false;
   }
 
@@ -122,12 +128,38 @@
     });
     Promise.all(jobs).then(function () {
       if (!info.game) throw new Error('no game file');
-      B.launch(JSON.stringify(info));
+      var ok = B.launch(JSON.stringify(info));
+      if (ok === false) { restore(); return; }
+      // The app may fail to open the player a moment later: then the site's own emulator takes over.
+      setTimeout(function () {
+        try { if (B.launchFailed && B.launchFailed()) restore(); } catch (x) {}
+      }, 1500);
     }).catch(function (e) {
       try { B.failed(String(e && e.message || e)); } catch (x) {}
+      restore();
     });
     return true;
   }
+
+  var restored = false;
+
+  /**
+   * The hand-over failed: let the site's own emulator run after all. Reads of EJS_gameUrl work
+   * again, and the loader that was stopped is added once more.
+   */
+  function restore() {
+    if (restored) return;
+    restored = true;
+    taken = false;
+    passive = true;
+    if (window.EJS_emulator || !loaderSrc) return;
+    try {
+      var s = document.createElement('script');
+      s.src = loaderSrc;
+      (document.body || document.documentElement).appendChild(s);
+    } catch (e) {}
+  }
+  window.__retrotvRestore = restore;
 
   // A loader added to the page (most sites add it when Play is pressed): decide now, before it runs.
   try {
@@ -138,6 +170,7 @@
           var n = added[j];
           if (n.tagName === 'SCRIPT' && LOADER.test(n.src || '')) {
             loaderSeen = true;
+            if (START.test(n.src)) loaderSrc = n.src;
             // Play pressed again on a single-page site (back from the player): a new attempt.
             if (taken && START.test(n.src) && Date.now() - takenAt > 3000) taken = false;
             trigger('loader');

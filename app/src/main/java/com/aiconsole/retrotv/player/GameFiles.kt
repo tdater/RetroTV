@@ -13,6 +13,7 @@ import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.FilterInputStream
 import java.io.InputStream
+import java.io.PushbackInputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
@@ -42,7 +43,7 @@ class GameFiles(context: Context) {
     private val saveDir = SaveStore.rootDir(context.filesDir)
 
     private sealed interface Source {
-        data class Remote(val url: String, val referer: String, val userAgent: String, val cookie: String?) : Source
+        data class Remote(val url: String, val referer: String, val userAgent: String, val cookie: String?, val strict: Boolean = true) : Source
         data class Local(val file: File) : Source
     }
 
@@ -62,10 +63,11 @@ class GameFiles(context: Context) {
      */
     fun prepare(req: GameRequest): Map<String, String> {
         if (tokens.size > 200) tokens.clear()
+        problem = null
         val out = LinkedHashMap<String, String>()
         fun add(key: String, value: String?, fallbackName: String) {
             if (value.isNullOrBlank()) return
-            val source = source(value, req) ?: return
+            val source = source(value, req, key == "game") ?: return
             val token = UUID.randomUUID().toString().replace("-", "")
             tokens[token] = source
             out[key] = "$ORIGIN/rom/$token/" + URLEncoder.encode(fileName(value, fallbackName), "UTF-8").replace("+", "%20")
@@ -78,11 +80,32 @@ class GameFiles(context: Context) {
         return out
     }
 
-    private fun source(value: String, req: GameRequest): Source? = when {
+    /** The last reason a game download was refused (see [RomRules]); [takeProblem] reads and clears it. */
+    @Volatile
+    private var problem: String? = null
+
+    fun takeProblem(): String? = problem.also { problem = null }
+
+    /** True when [file] is a cached game that still looks like one; a bad copy is deleted so it is fetched again. */
+    private fun cachedOk(file: File, strict: Boolean): Boolean {
+        if (file.length() <= 0) return false
+        val head = runCatching {
+            FileInputStream(file).use { input ->
+                val buf = ByteArray(RomRules.HEAD_BYTES)
+                val n = input.read(buf)
+                if (n <= 0) ByteArray(0) else buf.copyOf(n)
+            }
+        }.getOrNull() ?: return false
+        if (RomRules.check(null, file.length(), head, strict) == null) return true
+        file.delete()
+        return false
+    }
+
+    private fun source(value: String, req: GameRequest, strict: Boolean): Source? = when {
         value.startsWith("http://") || value.startsWith("https://") -> {
             val cached = cacheFile(value)
-            if (cached.length() > 0) Source.Local(cached)
-            else Source.Remote(value, req.referer.ifBlank { req.page }, req.userAgent, cookieFor(value, req.profile))
+            if (cachedOk(cached, strict)) Source.Local(cached)
+            else Source.Remote(value, req.referer.ifBlank { req.page }, req.userAgent, cookieFor(value, req.profile), strict)
         }
         value.startsWith("blob:") -> blobFile(value.removePrefix("blob:"))?.let { Source.Local(it) }
         value.startsWith("file:") -> File(value.removePrefix("file:")).takeIf { it.isFile && it.canonicalPath.startsWith(romDir.canonicalPath) }?.let { Source.Local(it) }
@@ -211,13 +234,13 @@ class GameFiles(context: Context) {
             is Source.Local -> fileResponse(source.file, head, emptyMap())
             is Source.Remote -> {
                 val cached = cacheFile(source.url)
-                if (cached.length() > 0) {
+                if (cachedOk(cached, source.strict)) {
                     cached.setLastModified(System.currentTimeMillis())
                     fileResponse(cached, head, emptyMap())
                 } else if (head) {
                     WebResourceResponse("application/octet-stream", null, 200, "OK", emptyMap(), ByteArrayInputStream(ByteArray(0)))
                 } else {
-                    download(source.url, source.referer, source.userAgent, source.cookie, cached, emptyMap())
+                    download(source.url, source.referer, source.userAgent, source.cookie, cached, emptyMap(), source.strict, true)
                 }
             }
         }
@@ -252,7 +275,7 @@ class GameFiles(context: Context) {
     }
 
     /** Streams [url] to the page while saving it to [target]; the copy is kept only when complete. */
-    private fun download(url: String, referer: String, userAgent: String, cookie: String?, target: File, extra: Map<String, String>): WebResourceResponse {
+    private fun download(url: String, referer: String, userAgent: String, cookie: String?, target: File, extra: Map<String, String>, strict: Boolean = true, validateRom: Boolean = false): WebResourceResponse {
         var current = url
         val firstHost = Uri.parse(url).host
         repeat(6) {
@@ -285,11 +308,43 @@ class GameFiles(context: Context) {
             }
             if (code !in 200..299) {
                 conn.disconnect()
+                if (validateRom) problem = "The site refused the download (HTTP $code). Open the game on the site again, then press Play."
                 return status(if (code in 400..599) code else 502, "Upstream error", extra)
             }
             val length = conn.contentLengthLong
+            var stream: InputStream = try {
+                conn.inputStream
+            } catch (e: Exception) {
+                conn.disconnect()
+                return status(502, "Bad Gateway", extra)
+            }
+            if (validateRom) {
+                // Never cache or hand over a challenge page / error JSON as the game.
+                val pushback = PushbackInputStream(stream, RomRules.HEAD_BYTES)
+                val buf = ByteArray(RomRules.HEAD_BYTES)
+                var n = 0
+                try {
+                    while (n < buf.size) {
+                        val r = pushback.read(buf, n, buf.size - n)
+                        if (r < 0) break
+                        n += r
+                    }
+                } catch (e: Exception) {
+                    conn.disconnect()
+                    return status(502, "Bad Gateway", extra)
+                }
+                val bad = RomRules.check(conn.contentType, length, buf.copyOf(n), strict)
+                if (bad != null) {
+                    problem = bad.message
+                    conn.disconnect()
+                    target.delete()
+                    return status(502, "Not a game file", extra)
+                }
+                pushback.unread(buf, 0, n)
+                stream = pushback
+            }
             val part = File(target.parentFile, target.name + ".part")
-            val body = SavingStream(conn.inputStream, part, length) { complete ->
+            val body = SavingStream(stream, part, length) { complete ->
                 conn.disconnect()
                 if (complete && part.renameTo(target)) {
                     if (target.parentFile == romDir) trim()
