@@ -31,7 +31,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 
-private object ArtMemory {
+internal object ArtMemory {
     val cache = LruCache<String, ImageBitmap>(60)
 
     /** Decodes [file] at most 512 px on its long side. */
@@ -42,6 +42,14 @@ private object ArtMemory {
         while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= 512) sample *= 2
         BitmapFactory.decodeFile(file.path, BitmapFactory.Options().apply { inSampleSize = sample })?.asImageBitmap()
     }.getOrNull()?.also { cache.put(file.path, it) }
+}
+
+/** A picture from a file on the TV (a save slot's screenshot); nothing is drawn while it loads or when it can't be read. */
+@Composable
+fun FileImage(path: String, description: String, modifier: Modifier = Modifier) {
+    val bitmap by produceState<ImageBitmap?>(null, path) { value = withContext(Dispatchers.IO) { ArtMemory.load(File(path)) } }
+    val b = bitmap
+    if (b != null) Image(b, description, modifier, contentScale = ContentScale.Fit)
 }
 
 /** A game's box art ([com.aiconsole.retrotv.player.ArtStore]), or a console-coloured placeholder when there is none. */

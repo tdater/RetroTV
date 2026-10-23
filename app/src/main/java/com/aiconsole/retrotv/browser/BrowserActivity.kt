@@ -109,6 +109,10 @@ class BrowserActivity : ComponentActivity(), BrowserActions {
 
     /** Fix-this-page: the original per-site options, kept so the fixes can be reset. */
     internal val fixOriginal = HashMap<String, SitePrefs>()
+
+    /** The last fix applied (host, compat id) that has not been judged yet. */
+    internal var pendingFix: Pair<String, String>? = null
+    internal val fixHeld = Runnable { settleFix(true) }
     internal val pendingBlobs = ConcurrentHashMap<String, String>()
 
     /** A long press opened the menu; swallow the rest of that key press. */
@@ -141,6 +145,7 @@ class BrowserActivity : ComponentActivity(), BrowserActions {
             toast("Using ${ui.host}'s own player · Menu ▸ Game player to switch back")
             webView?.reload()
         } else {
+            settleFix(true)
             toast("Back on ${ui.title.ifEmpty { ui.host }} · pick another game")
         }
     }
@@ -504,6 +509,7 @@ class BrowserActivity : ComponentActivity(), BrowserActions {
     override fun toggleGamePlayer() = controls.toggleGamePlayer()
     override fun cycleController() = controls.cycleController()
     override fun fixThisPage() = controls.fixThisPage()
+    override fun clearCompat() = controls.clearCompat()
     override fun toggleControllerBrowse() = controls.toggleControllerBrowse()
     override fun installApp() = controls.installApp()
     override fun addToHome() = controls.addToHome()

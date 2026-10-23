@@ -5,6 +5,7 @@ import android.content.Intent
 import android.speech.RecognizerIntent
 import androidx.lifecycle.lifecycleScope
 import com.aiconsole.retrotv.apps.SiteApps
+import com.aiconsole.retrotv.data.CompatRules
 import com.aiconsole.retrotv.data.ControllerMode
 import com.aiconsole.retrotv.data.SitePrefs
 import com.aiconsole.retrotv.data.UrlInput
@@ -17,6 +18,14 @@ import com.aiconsole.retrotv.web.Userscript
 import kotlinx.coroutines.launch
 
 // The browser's toolbar and menu commands ([BrowserActions]).
+
+/** Records the last applied fix as worked or not, once; no-op when none is waiting. */
+internal fun BrowserActivity.settleFix(worked: Boolean) {
+    val (host, id) = pendingFix ?: return
+    pendingFix = null
+    handler.removeCallbacks(fixHeld)
+    app.compat.record(host, id, worked)
+}
 
 internal fun BrowserActivity.browserControls(): BrowserActions = object : BrowserActions {
     // (fixThisPage: see below; the ladder itself is in FixLadder.kt)
@@ -159,6 +168,8 @@ internal fun BrowserActivity.browserControls(): BrowserActions = object : Browse
         // a step never "changes" a setting back to what it was.
         val state = ui.fixBase[host] ?: FixLadder.State(ui.desktop, ui.siteAdBlock, ui.gamePlayer, ui.controllerMode.name)
         val step = FixLadder.next(tried, state)
+        // Tapping Fix again means the previous step did not do it.
+        settleFix(false)
         if (step == null) {
             // Everything was tried: put the site's options back as they were and start over.
             fixOriginal.remove(host)?.let { orig -> settings.updateSite(host) { orig } }
@@ -175,6 +186,12 @@ internal fun BrowserActivity.browserControls(): BrowserActions = object : Browse
         if (step.persists) fixOriginal.getOrPut(host) { settings.site(host) }
         ui.fixBase = ui.fixBase + (host to state)
         ui.fixTried = ui.fixTried + (host to (tried + step))
+        // Judged later: a game launch or a minute without another tap counts as "worked".
+        FixLadder.compatId(step, FixLadder.State(ui.desktop, ui.siteAdBlock, ui.gamePlayer, ui.controllerMode.name))?.let { id ->
+            pendingFix = host to id
+            handler.removeCallbacks(fixHeld)
+            handler.postDelayed(fixHeld, CompatRules.WORKED_AFTER_MS)
+        }
         show(null)
         // The winning combination stays: every persisting step is written to this site's options.
         when (step) {
@@ -191,6 +208,14 @@ internal fun BrowserActivity.browserControls(): BrowserActions = object : Browse
             if (step == FixLadder.Step.Report) "Last step ($n of $total): Settings ▸ Report a problem"
             else "Fix $n of $total: ${step.label} · play again, tap Fix it if still broken"
         )
+    }
+
+    override fun clearCompat() {
+        val host = ui.host
+        pendingFix = null
+        handler.removeCallbacks(fixHeld)
+        app.compat.clear(host)
+        toast("Compatibility notes cleared for $host")
     }
 
     private fun setController(mode: ControllerMode) {

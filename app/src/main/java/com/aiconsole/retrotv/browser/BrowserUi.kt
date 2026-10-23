@@ -118,6 +118,8 @@ interface BrowserActions {
     fun cycleController()
     /** Applies the next remedy for a game that won't play; when all are tried, resets them. */
     fun fixThisPage()
+    /** Forgets what worked on this site (the compatibility notes). */
+    fun clearCompat()
     fun toggleGamePlayer()
     fun toggleControllerBrowse()
     fun installApp()
@@ -290,6 +292,7 @@ private fun MenuPanel(state: BrowserUiState, actions: BrowserActions) {
             state.fixBase[state.host] ?: FixLadder.State(state.desktop, state.siteAdBlock, state.gamePlayer, state.controllerMode.name)
         )
         TvButton("Game not working? Fix it  ·  $fixHint", { actions.fixThisPage() }, Modifier.fillMaxWidth(), icon = "🩹")
+        TvButton("Clear compatibility notes for this site", { actions.clearCompat() }, Modifier.fillMaxWidth(), icon = "🧹")
         if (state.blockedFrames > 0) {
             Text("Blocked ${state.blockedFrames} ad frame${if (state.blockedFrames == 1) "" else "s"} on this page", color = TextDim, fontSize = 13.sp)
         }

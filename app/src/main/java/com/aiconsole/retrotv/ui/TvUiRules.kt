@@ -8,6 +8,9 @@ import com.aiconsole.retrotv.player.RecentGame
 sealed interface Slide {
     data class Game(val game: RecentGame) : Slide
     data class SiteCard(val site: Site) : Slide
+
+    /** A screenshot the player saved with one of the game's save slots ([path] is the PNG). */
+    data class Shot(val game: RecentGame, val path: String) : Slide
 }
 
 /** When the attract mode starts and what it shows (pure, unit-tested). */
@@ -15,10 +18,16 @@ object AttractRules {
 
     fun due(lastInputMs: Long, nowMs: Long, afterMin: Int): Boolean = afterMin > 0 && nowMs - lastInputMs >= afterMin * 60_000L
 
-    /** The library's games, favourites first then most played; the sites when there are no games. */
-    fun slides(games: List<RecentGame>, sites: List<Site>, max: Int = 30): List<Slide> =
+    /**
+     * The library's games, favourites first then most played; the sites when there are no games.
+     * A game with saved-state screenshots ([shots]: game key to PNG paths) is followed by one of
+     * them (which one rotates with [round]), so box art and in-game pictures alternate.
+     */
+    fun slides(games: List<RecentGame>, sites: List<Site>, max: Int = 30, shots: Map<String, List<String>> = emptyMap(), round: Int = 0): List<Slide> =
         if (games.isEmpty()) sites.take(max).map { Slide.SiteCard(it) }
-        else games.sortedWith(compareByDescending<RecentGame> { it.favorite }.thenByDescending { it.playMs }).take(max).map { Slide.Game(it) }
+        else games.sortedWith(compareByDescending<RecentGame> { it.favorite }.thenByDescending { it.playMs }).flatMap { g ->
+            listOfNotNull(Slide.Game(g), AttractShots.pick(shots[g.request.key], round)?.let { Slide.Shot(g, it) })
+        }.take(max)
 }
 
 /** Names of controller buttons, for the setup's controller test (pure, unit-tested). */

@@ -86,6 +86,13 @@ class GameFiles(context: Context) {
 
     fun takeProblem(): String? = problem.also { problem = null }
 
+    /**
+     * Called (from a request thread) with bytes so far and the total (-1 when unknown) while the
+     * game file itself is fetched natively; a finished fetch reports once more. Set by the player.
+     */
+    @Volatile
+    var progressListener: ((done: Long, total: Long) -> Unit)? = null
+
     /** True when [file] is a cached game that still looks like one; a bad copy is deleted so it is fetched again. */
     private fun cachedOk(file: File, strict: Boolean): Boolean {
         if (file.length() <= 0) return false
@@ -345,7 +352,8 @@ class GameFiles(context: Context) {
                 stream = pushback
             }
             val part = File(target.parentFile, target.name + ".part")
-            val body = SavingStream(stream, part, length) { complete ->
+            val report = if (validateRom) progressListener else null
+            val body = SavingStream(stream, part, length, report) { complete ->
                 conn.disconnect()
                 if (complete && part.renameTo(target)) {
                     if (target.parentFile == romDir) trim()
@@ -410,17 +418,34 @@ class GameFiles(context: Context) {
         return true
     }
 
-    private class SavingStream(input: InputStream, private val file: File, private val expected: Long, private val onEnd: (Boolean) -> Unit) :
-        FilterInputStream(input) {
+    private class SavingStream(
+        input: InputStream,
+        private val file: File,
+        private val expected: Long,
+        private val progress: ((done: Long, total: Long) -> Unit)?,
+        private val onEnd: (Boolean) -> Unit
+    ) : FilterInputStream(input) {
         private val out = runCatching { FileOutputStream(file) }.getOrNull()
         private var written = 0L
         private var ended = false
+        private var reportedAt = 0L
+
+        /** Tells the listener how far the download is, at most every 150 ms (and at the end). */
+        private fun report(force: Boolean, finished: Boolean = false) {
+            val listener = progress ?: return
+            val now = System.nanoTime()
+            if (!force && now - reportedAt < 150_000_000L) return
+            reportedAt = now
+            // A stream that ended cleanly knows its total now, even when the server never said.
+            listener(written, if (finished) written else expected)
+        }
 
         override fun read(): Int {
             val b = super.read()
             if (b < 0) finish(true) else {
                 out?.write(b)
                 written++
+                report(false)
             }
             return b
         }
@@ -435,6 +460,7 @@ class GameFiles(context: Context) {
             if (n < 0) finish(true) else if (n > 0) {
                 out?.write(b, off, n)
                 written += n
+                report(false)
             }
             return n
         }
@@ -448,6 +474,7 @@ class GameFiles(context: Context) {
             if (ended) return
             ended = true
             runCatching { out?.close() }
+            report(true, eof)
             onEnd(eof && out != null && (expected < 0 || written == expected))
         }
     }

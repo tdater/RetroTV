@@ -39,6 +39,21 @@ object FixLadder {
         else -> true
     }
 
+    /**
+     * The compatibility-log id of what [step] changes when applied in [current] (see `CompatRules`),
+     * or null for steps that say nothing about the site (report a problem).
+     */
+    fun compatId(step: Step, current: State): String? = when (step) {
+        Step.Reload -> "reload"
+        Step.TogglePlayer -> if (current.builtInPlayer) "player:site" else "player:retrotv"
+        Step.ToggleView -> if (current.desktop) "view:tv" else "view:desktop"
+        Step.AdBlockOff -> "adblock:off"
+        Step.KeyboardKeys -> "controller:keyboard"
+        Step.GamepadApi -> "controller:gamepad"
+        Step.BothControllers -> "controller:both"
+        Step.Report -> null
+    }
+
     /** The next remedy to try, or null when everything has been tried. */
     fun next(tried: Set<Step>, state: State): Step? =
         Step.entries.firstOrNull { it !in tried && applicable(it, state) }

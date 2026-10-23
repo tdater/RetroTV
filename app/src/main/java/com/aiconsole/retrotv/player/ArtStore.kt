@@ -16,6 +16,36 @@ import java.util.concurrent.ConcurrentHashMap
 /** Which libretro picture: the box, or an in-game screenshot (the attract mode). */
 enum class ArtKind(val folder: String) { Box("Named_Boxarts"), Snap("Named_Snaps") }
 
+/** Keeps the art cache under a size limit by dropping the least recently used pictures (pure, unit-tested). */
+object CachePolicy {
+    /** The size limits Settings offers, in MB. */
+    val CAPS_MB = listOf(50, 100, 250, 500)
+    const val DEFAULT_CAP_MB = 100
+
+    data class Entry(val name: String, val size: Long, val lastModified: Long)
+
+    /** Names to delete, oldest use first, until what is left fits in [capBytes]; nothing when it already fits. */
+    fun evict(entries: List<Entry>, capBytes: Long): List<String> {
+        var total = entries.sumOf { it.size.coerceAtLeast(0) }
+        val cap = capBytes.coerceAtLeast(0)
+        if (total <= cap) return emptyList()
+        val out = ArrayList<String>()
+        for (e in entries.sortedWith(compareBy<Entry> { it.lastModified }.thenBy { it.name })) {
+            if (total <= cap) break
+            out += e.name
+            total -= e.size.coerceAtLeast(0)
+        }
+        return out
+    }
+
+    /** "38 MB", "512 KB", "0 MB". */
+    fun label(bytes: Long): String = when {
+        bytes <= 0 -> "0 MB"
+        bytes < 1_000_000 -> "${(bytes + 999) / 1000} KB"
+        else -> "${bytes / 1_000_000} MB"
+    }
+}
+
 /**
  * Box art from libretro's thumbnail server ([ArtNames]), cached under `filesDir/art/`. Each
  * console's list of names is downloaded once (refreshed monthly). A title with no match is
@@ -37,7 +67,34 @@ class ArtStore(context: Context) {
     /** The art already on the TV, without touching the network. */
     fun cached(core: String, title: String, kind: ArtKind = ArtKind.Box): File? {
         val folder = ArtNames.folder(core) ?: return null
-        return file(folder, title, kind).takeIf { it.length() > 0 }
+        return file(folder, title, kind).takeIf { it.length() > 0 }?.also { touch(it) }
+    }
+
+    // Reading a cover marks it recently used (at most once an hour per file), so eviction drops the unused ones.
+    private fun touch(f: File) {
+        val now = System.currentTimeMillis()
+        if (now - f.lastModified() > HOUR) f.setLastModified(now)
+    }
+
+    /** Bytes used by the art folder (covers, screenshots and name lists). */
+    fun sizeBytes(): Long = dir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
+
+    /** Size limit for the covers, in MB (one of [CachePolicy.CAPS_MB]). */
+    var capMb: Int
+        get() = prefs.getInt("cap_mb", CachePolicy.DEFAULT_CAP_MB)
+        set(v) = prefs.edit { putInt("cap_mb", v) }
+
+    /** Deletes the least recently used pictures until the cache fits the limit. */
+    fun trim() {
+        val files = dir.listFiles { f -> f.isFile && f.name.endsWith(".png") }.orEmpty()
+        val drop = CachePolicy.evict(files.map { CachePolicy.Entry(it.name, it.length(), it.lastModified()) }, capMb * 1_000_000L).toSet()
+        if (drop.isNotEmpty()) files.filter { it.name in drop }.forEach { it.delete() }
+    }
+
+    /** Deletes every downloaded picture and name list, and forgets which titles had no art. */
+    fun clear() {
+        dir.walkBottomUp().filter { it.isFile }.forEach { it.delete() }
+        prefs.edit { prefs.all.keys.filter { it.startsWith("miss_") }.forEach { remove(it) } }
     }
 
     /** The art for a game, downloading it when needed; null when there is none. */
@@ -52,7 +109,7 @@ class ArtStore(context: Context) {
         val bytes = get("$BASE/${encode(folder)}/${kind.folder}/${encode(name)}.png") ?: return@withContext remember(miss, HOUR)
         val part = File(dir, target.name + ".part")
         runCatching { part.writeBytes(bytes) }
-        if (part.renameTo(target)) target else remember(miss, HOUR).also { part.delete() }
+        if (part.renameTo(target)) target.also { trim() } else remember(miss, HOUR).also { part.delete() }
     }
 
     private fun remember(miss: String, forMs: Long): File? {

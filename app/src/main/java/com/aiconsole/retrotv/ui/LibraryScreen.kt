@@ -49,7 +49,12 @@ fun LibraryScreen(onBack: () -> Unit) {
     var sort by rememberSaveable { mutableStateOf(LibrarySort.Recent) }
     var query by rememberSaveable { mutableStateOf("") }
     var menuFor by remember { mutableStateOf<RecentGame?>(null) }
-    val shown = LibraryRules.sort(LibraryRules.filter(games, system, query), sort)
+    var pickFor by remember { mutableStateOf<RecentGame?>(null) }
+    var managing by remember { mutableStateOf(false) }
+    var collectionId by rememberSaveable { mutableStateOf<String?>(null) }
+    val collections by remember { CollectionStore.from(context) }.collections.collectAsState()
+    val inCollection = collections.firstOrNull { it.id == collectionId }?.keys?.toSet()
+    val shown = LibraryRules.sort(LibraryRules.filter(games, system, query), sort).filter { inCollection == null || it.request.key in inCollection }
     val first = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { first.requestFocus() } }
 
@@ -79,6 +84,17 @@ fun LibraryScreen(onBack: () -> Unit) {
                     items(LibraryRules.systems(games)) { id -> TvButton(Systems.label(id), { system = id }, selected = system == id) }
                 }
             }
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    item { TvButton("Collections…", { managing = true }, icon = "📁") }
+                    if (collections.isNotEmpty()) {
+                        item { TvButton("Any", { collectionId = null }, selected = inCollection == null) }
+                        items(collections, key = { it.id }) { c ->
+                            TvButton("${c.name} (${c.keys.size})", { collectionId = c.id }, selected = collectionId == c.id)
+                        }
+                    }
+                }
+            }
             items(shown, key = { it.request.key }) { g ->
                 GameTile(g, { playRecent(context, g) }, { menuFor = g }, if (g == shown.first()) Modifier.focusRequester(first) else Modifier)
             }
@@ -87,8 +103,10 @@ fun LibraryScreen(onBack: () -> Unit) {
 
     menuFor?.let { g ->
         BackHandler { menuFor = null }
-        GameMenu(g, onClose = { menuFor = null })
+        GameMenu(g, onClose = { menuFor = null }, onCollections = { menuFor = null; pickFor = g })
     }
+    pickFor?.let { g -> CollectionPicker(g, onClose = { pickFor = null }) }
+    if (managing) ManageCollections(onClose = { managing = false })
 }
 
 /** A library game: box art, title, console and play time; hold OK for its menu. */
@@ -112,7 +130,7 @@ fun GameTile(g: RecentGame, onClick: () -> Unit, onLongClick: () -> Unit, modifi
 }
 
 @Composable
-private fun GameMenu(g: RecentGame, onClose: () -> Unit) {
+private fun GameMenu(g: RecentGame, onClose: () -> Unit, onCollections: () -> Unit) {
     val context = LocalContext.current
     val app = RetroApp.from(context)
     val r = g.request
@@ -127,6 +145,7 @@ private fun GameMenu(g: RecentGame, onClose: () -> Unit) {
             if (r.page.startsWith("http")) TvButton("Open the site page", { onClose(); openInBrowser(context, r.page) }, Modifier.weight(1f), icon = "🌐")
             TvButton("Remove", { app.library.remove(r.key); onClose() }, Modifier.weight(1f), icon = "🗑")
         }
+        TvButton("Add to collection…", onCollections, icon = "📁")
         Text("Saves stay on the TV when a game is removed from this list.", color = TextDim, fontSize = 13.sp)
         TvButton("Close", onClose, icon = "✕")
     }

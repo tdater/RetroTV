@@ -2,6 +2,7 @@ package com.aiconsole.retrotv
 
 import android.app.Application
 import android.content.Context
+import com.aiconsole.retrotv.data.CompatLog
 import com.aiconsole.retrotv.data.FreezeWatchdog
 import com.aiconsole.retrotv.data.History
 import com.aiconsole.retrotv.data.ProblemReport
@@ -33,6 +34,7 @@ class RetroApp : Application() {
     val health by lazy { SiteChecker(this) }
     val link by lazy { LinkServer(this) }
     val sync by lazy { SaveSync(this) }
+    val compat by lazy { CompatLog(this) }
 
     override fun onCreate() {
         super.onCreate()

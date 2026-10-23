@@ -23,6 +23,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -50,6 +51,7 @@ import com.aiconsole.retrotv.data.Prefs
 import com.aiconsole.retrotv.data.UrlInput
 import com.aiconsole.retrotv.data.ViewMode
 import com.aiconsole.retrotv.data.WindowMode
+import com.aiconsole.retrotv.player.CachePolicy
 import com.aiconsole.retrotv.player.Filters
 import com.aiconsole.retrotv.player.Systems
 import com.aiconsole.retrotv.web.AdBlock
@@ -77,6 +79,11 @@ fun SettingsScreen(onBack: () -> Unit, onNavigate: (Screen) -> Unit) {
     var report by remember { mutableStateOf<Pair<File, String?>?>(null) }
     val reportShare = remember { ReportShare(context, scope) }
     DisposableEffect(Unit) { onDispose { reportShare.stop() } }
+    var showHomeLayout by remember { mutableStateOf(false) }
+    var artVersion by remember { mutableIntStateOf(0) }
+    var artBytes by remember { mutableLongStateOf(0L) }
+    var artCap by remember { mutableIntStateOf(app.art.capMb) }
+    LaunchedEffect(artVersion) { artBytes = withContext(Dispatchers.IO) { app.art.sizeBytes() } }
     val first = remember { FocusRequester() }
     fun set(change: (Prefs) -> Prefs) = app.settings.update(change)
 
@@ -125,6 +132,10 @@ fun SettingsScreen(onBack: () -> Unit, onNavigate: (Screen) -> Unit) {
                 item { ToggleRow("Show site descriptions", prefs.showDescriptions, { v -> set { it.copy(showDescriptions = v) } }) }
                 item { ToggleRow("Show clock", prefs.showClock, { v -> set { it.copy(showClock = v) } }) }
                 item {
+                    SettingRow("Home screen", "Choose rows", { showHomeLayout = true },
+                        subtitle = "Show, hide and reorder the rows: continue playing, stats, recent games, collections, game sites")
+                }
+                item {
                     ChoiceRow("Text size", listOf(0, 1, 2), prefs.textSize, { Readability.LABELS[it] }, { v -> set { it.copy(textSize = v) } },
                         subtitle = "Larger text everywhere, for big rooms or small TVs")
                 }
@@ -167,6 +178,24 @@ fun SettingsScreen(onBack: () -> Unit, onNavigate: (Screen) -> Unit) {
                     }, subtitle = "Games played in RetroTV's player are kept so they start instantly and offline (up to 1.5 GB)")
                 }
                 item { SettingRow("Clear recent games", "", { app.library.clear(); message = "Recent games cleared" }) }
+                item {
+                    SettingRow("Box art cache: ${CachePolicy.label(artBytes)}", "Clear", {
+                        scope.launch {
+                            withContext(Dispatchers.IO) { app.art.clear() }
+                            artVersion++
+                            message = "Box art cleared; covers download again when needed"
+                        }
+                    }, subtitle = "Covers and screenshots from the libretro thumbnail server")
+                }
+                item {
+                    ChoiceRow("Box art cache limit", CachePolicy.CAPS_MB, artCap, { "$it MB" }, { v ->
+                        artCap = v
+                        scope.launch {
+                            withContext(Dispatchers.IO) { app.art.capMb = v; app.art.trim() }
+                            artVersion++
+                        }
+                    }, subtitle = "The least recently used covers are deleted when the cache grows past this")
+                }
                 item {
                     SettingRow("Play without internet", if (showOffline) "Hide" else "Choose consoles", { showOffline = !showOffline },
                         subtitle = "Download a console's emulator now so its games start even when the internet is down")
@@ -355,6 +384,8 @@ fun SettingsScreen(onBack: () -> Unit, onNavigate: (Screen) -> Unit) {
                 }
             }
         }
+
+        if (showHomeLayout) HomeLayoutPanel(onClose = { showHomeLayout = false })
 
         report?.let { (file, url) ->
             BackHandler { reportShare.stop(); report = null }

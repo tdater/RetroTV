@@ -23,6 +23,7 @@ import androidx.compose.ui.unit.dp
 import com.aiconsole.retrotv.RetroApp
 import com.aiconsole.retrotv.browser.BrowserActivity
 import com.aiconsole.retrotv.data.Site
+import com.aiconsole.retrotv.player.SaveNames
 import kotlinx.coroutines.delay
 
 enum class Screen { Home, Downloads, Scripts, Settings, History, Library, Search, Phone, Sync, Setup }
@@ -82,7 +83,14 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                     if (showAttract) {
-                        val slides = remember { AttractRules.slides(app.library.recent.value, app.sites.all().filter { it.id !in prefs.hiddenSites }) }
+                        val slides = remember {
+                            val games = app.library.recent.value
+                            // Saved-state screenshots (slot PNGs) of each game, mixed in with the box art.
+                            val shots = games.associate { g ->
+                                g.request.key to (1..SaveNames.SLOTS).mapNotNull { app.saves.thumbnail(g.request.key, it)?.path }
+                            }
+                            AttractRules.slides(games, app.sites.all().filter { it.id !in prefs.hiddenSites }, shots = shots, round = (System.currentTimeMillis() / 60_000).toInt())
+                        }
                         AttractMode(slides)
                     }
                 }

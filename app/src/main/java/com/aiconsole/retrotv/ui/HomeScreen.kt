@@ -87,6 +87,10 @@ fun HomeScreen(onNavigate: (Screen) -> Unit, onOpen: (Site) -> Unit, onOpenUrl: 
     }
 
     val health by app.health.results.collectAsState()
+    val collectionStore = remember { CollectionStore.from(context) }
+    val collections by collectionStore.collections.collectAsState()
+    val layout by remember { HomeLayoutStore.from(context) }.rows.collectAsState()
+    val order = HomeLayout.visibleIds(layout)
     val heroFocus = remember { FocusRequester() }
     var lastPick by rememberSaveable { mutableStateOf<String?>(null) }
     val surprise: () -> Unit = {
@@ -105,7 +109,7 @@ fun HomeScreen(onNavigate: (Screen) -> Unit, onOpen: (Site) -> Unit, onOpenUrl: 
         }
     }
     // The hero (when it is showing) takes the first focus so OK resumes the last game.
-    LaunchedEffect(Unit) { runCatching { if (filter == ALL) heroFocus.requestFocus() else firstCard.requestFocus() } }
+    LaunchedEffect(Unit) { runCatching { if (filter == ALL && HomeLayout.HERO in order) heroFocus.requestFocus() else firstCard.requestFocus() } }
     LaunchedEffect(Unit) { if (app.health.isDue()) runCatching { app.health.checkAll(all) } }
 
     Box(Modifier.fillMaxSize()) {
@@ -121,82 +125,95 @@ fun HomeScreen(onNavigate: (Screen) -> Unit, onOpen: (Site) -> Unit, onOpenUrl: 
             if (note.isNotEmpty()) {
                 item(span = { GridItemSpan(maxLineSpan) }) { Text(note, color = MaterialTheme.colorScheme.primary, fontSize = 15.sp) }
             }
-            if (filter == ALL) {
-                item(span = { GridItemSpan(maxLineSpan) }) {
-                    ContinueHero(
-                        game = games.firstOrNull(),
-                        now = System.currentTimeMillis(),
-                        resumeFocus = heroFocus,
-                        onResume = { games.firstOrNull()?.let { playRecent(context, it) } },
-                        onSurprise = surprise,
-                        onPlayRom = roms.open
-                    )
-                }
-                if (games.isNotEmpty()) {
-                    item(span = { GridItemSpan(maxLineSpan) }) {
-                        StatsStrip(games.sumOf { it.playMs }, games.size, games.count { it.favorite })
+            // The rows come in the order (and with the visibility) chosen in Settings > Home screen.
+            for (row in order) {
+                // A tag filter narrows the home screen down to the matching sites.
+                if (row != HomeLayout.SITES && filter != ALL) continue
+                when (row) {
+                    HomeLayout.HERO -> item(span = { GridItemSpan(maxLineSpan) }) {
+                        ContinueHero(
+                            game = games.firstOrNull(),
+                            now = System.currentTimeMillis(),
+                            resumeFocus = heroFocus,
+                            onResume = { games.firstOrNull()?.let { playRecent(context, it) } },
+                            onSurprise = surprise,
+                            onPlayRom = roms.open
+                        )
                     }
-                }
-            }
-            item(span = { GridItemSpan(maxLineSpan) }) {
-                Column {
-                    SectionTitle("Filter")
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        items(tags) { t -> TvButton(t, { filter = t }, selected = filter == t) }
+                    HomeLayout.STATS -> if (games.isNotEmpty()) {
+                        item(span = { GridItemSpan(maxLineSpan) }) {
+                            StatsStrip(games.sumOf { it.playMs }, games.size, games.count { it.favorite })
+                        }
                     }
-                }
-            }
-            if (games.isNotEmpty() && filter == ALL) {
-                item(span = { GridItemSpan(maxLineSpan) }) {
-                    RecentGamesRow(games) { app.library.remove(it.request.key) }
-                }
-            }
-            if (history.isNotEmpty() && filter == ALL) {
-                item(span = { GridItemSpan(maxLineSpan) }) {
-                    Column {
-                        SectionTitle("Recently visited")
-                        LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            items(history.take(10), key = { it.url }) { h ->
-                                TvClickable(onClick = { onOpenUrl(h.url) }, modifier = Modifier.width(260.dp)) {
-                                    Column(Modifier.padding(14.dp)) {
-                                        Text(h.title, color = Color.White, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                        Text(UrlInput.host(h.url).orEmpty(), color = TextDim, fontSize = 12.sp, maxLines = 1)
+                    HomeLayout.RECENT -> if (games.isNotEmpty()) {
+                        item(span = { GridItemSpan(maxLineSpan) }) {
+                            RecentGamesRow(games) { app.library.remove(it.request.key) }
+                        }
+                    }
+                    HomeLayout.VISITED -> if (history.isNotEmpty()) {
+                        item(span = { GridItemSpan(maxLineSpan) }) {
+                            Column {
+                                SectionTitle("Recently visited")
+                                LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                    items(history.take(10), key = { it.url }) { h ->
+                                        TvClickable(onClick = { onOpenUrl(h.url) }, modifier = Modifier.width(260.dp)) {
+                                            Column(Modifier.padding(14.dp)) {
+                                                Text(h.title, color = Color.White, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                                Text(UrlInput.host(h.url).orEmpty(), color = TextDim, fontSize = 12.sp, maxLines = 1)
+                                            }
+                                        }
                                     }
                                 }
                             }
                         }
                     }
-                }
-            }
-            item(span = { GridItemSpan(maxLineSpan) }) { SectionTitle(if (filter == ALL) "Game sites" else filter) }
-            items(shown, key = { it.id }) { site ->
-                val index = shown.indexOf(site)
-                SiteCard(
-                    site = site,
-                    lastGame = SiteBadges.lastGame(site.host, games)?.request?.displayTitle,
-                    player = SiteBadges.usesPlayer(site.host, prefs.playerHosts),
-                    health = health[site.host] ?: Health.Unknown,
-                    favorite = site.id in prefs.favorites,
-                    installed = remember(site.id, refresh) { SiteApps.isInstalled(context, site) },
-                    showDescription = prefs.showDescriptions,
-                    onClick = { onOpen(site) },
-                    onMenu = { menuFor = site },
-                    modifier = if (index == 0) Modifier.focusRequester(firstCard) else Modifier
-                )
-            }
-            item {
-                TvClickable(onClick = { dialog = "add" }, modifier = Modifier.aspectRatio(16f / 9f), contentAlignment = Alignment.Center) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("＋", fontSize = 40.sp, color = MaterialTheme.colorScheme.primary)
-                        Text("Add a site", color = Color.White, fontSize = 16.sp)
+                    HomeLayout.COLLECTIONS -> if (CollectionRules.nonEmpty(collections, games, { it.request.key }).isNotEmpty()) {
+                        item(span = { GridItemSpan(maxLineSpan) }) {
+                            CollectionsRows(collections, games) { c, g -> collectionStore.remove(c.id, g.request.key) }
+                        }
+                    }
+                    HomeLayout.SITES -> {
+                        item(span = { GridItemSpan(maxLineSpan) }) {
+                            Column {
+                                SectionTitle("Filter")
+                                LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                    items(tags) { t -> TvButton(t, { filter = t }, selected = filter == t) }
+                                }
+                            }
+                        }
+                        item(span = { GridItemSpan(maxLineSpan) }) { SectionTitle(if (filter == ALL) "Game sites" else filter) }
+                        items(shown, key = { it.id }) { site ->
+                            val index = shown.indexOf(site)
+                            SiteCard(
+                                site = site,
+                                lastGame = SiteBadges.lastGame(site.host, games)?.request?.displayTitle,
+                                player = SiteBadges.usesPlayer(site.host, prefs.playerHosts),
+                                health = health[site.host] ?: Health.Unknown,
+                                compat = remember(site.host, refresh) { app.compat.best(site.host) },
+                                favorite = site.id in prefs.favorites,
+                                installed = remember(site.id, refresh) { SiteApps.isInstalled(context, site) },
+                                showDescription = prefs.showDescriptions,
+                                onClick = { onOpen(site) },
+                                onMenu = { menuFor = site },
+                                modifier = if (index == 0) Modifier.focusRequester(firstCard) else Modifier
+                            )
+                        }
+                        item {
+                            TvClickable(onClick = { dialog = "add" }, modifier = Modifier.aspectRatio(16f / 9f), contentAlignment = Alignment.Center) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text("＋", fontSize = 40.sp, color = MaterialTheme.colorScheme.primary)
+                                    Text("Add a site", color = Color.White, fontSize = 16.sp)
+                                }
+                            }
+                        }
+                        item(span = { GridItemSpan(maxLineSpan) }) {
+                            Text(
+                                "Hold OK (or press Menu) on a site for options: favorite, install as its own app, view mode, ad blocking.",
+                                color = TextDim, fontSize = 13.sp, modifier = Modifier.padding(vertical = 12.dp)
+                            )
+                        }
                     }
                 }
-            }
-            item(span = { GridItemSpan(maxLineSpan) }) {
-                Text(
-                    "Hold OK (or press Menu) on a site for options: favorite, install as its own app, view mode, ad blocking.",
-                    color = TextDim, fontSize = 13.sp, modifier = Modifier.padding(vertical = 12.dp)
-                )
             }
         }
 
@@ -284,6 +301,7 @@ private fun SiteCard(
     lastGame: String?,
     player: Boolean,
     health: Health,
+    compat: String?,
     favorite: Boolean,
     installed: Boolean,
     showDescription: Boolean,
@@ -328,7 +346,10 @@ private fun SiteCard(
             if (!site.builtIn) Pill("Mine", Color.White)
             if (player) Pill("Player ✓", Color(0xFF22D3EE))
         }
-        Box(Modifier.align(Alignment.TopEnd).padding(10.dp)) { HealthChip(health) }
+        Column(Modifier.align(Alignment.TopEnd).padding(10.dp), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            HealthChip(health)
+            if (compat != null) Pill(compat, Color(0xFF3DDC84))
+        }
         Column(Modifier.padding(14.dp)) {
             Text(site.name, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
             if (lastGame != null) {

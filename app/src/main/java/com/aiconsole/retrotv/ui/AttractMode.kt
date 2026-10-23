@@ -63,6 +63,7 @@ fun AttractMode(slides: List<Slide>) {
                 when (slide) {
                     is Slide.Game -> GameSlide(slide)
                     is Slide.SiteCard -> SiteSlide(slide)
+                    is Slide.Shot -> ShotSlide(slide)
                 }
             }
         }
@@ -91,6 +92,17 @@ private fun GameSlide(slide: Slide.Game) {
                 color = TextDim, fontSize = 22.sp
             )
         }
+    }
+}
+
+/** The player's own screenshot of the game, large, with its title underneath. */
+@Composable
+private fun ShotSlide(slide: Slide.Shot) {
+    val r = slide.game.request
+    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        FileImage(slide.path, r.displayTitle, Modifier.fillMaxWidth().weight(1f, fill = false))
+        Text(r.displayTitle, color = Color.White, fontSize = 36.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(Systems.label(r.core), color = TextDim, fontSize = 20.sp)
     }
 }
 

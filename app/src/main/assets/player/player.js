@@ -86,10 +86,36 @@
     s.onerror = function () { fail('Could not download the emulator. Check the internet connection.'); };
     document.body.appendChild(s);
   }
+  // Pre-flight: report what this WebView can do and let the app decide (RetroPlayer.go / halt) before
+  // any emulator file is downloaded. Without the app's answer within 5 s the game starts anyway.
+  function capabilities() {
+    var gl2 = false, threads = false;
+    try { gl2 = !!document.createElement('canvas').getContext('webgl2'); } catch (e) {}
+    try { threads = typeof WebAssembly === 'object' && !!new WebAssembly.Memory({ initial: 1, maximum: 1, shared: true }).buffer; } catch (e) {}
+    return {
+      webgl2: gl2,
+      sab: typeof SharedArrayBuffer === 'function',
+      isolated: self.crossOriginIsolated === true,
+      threads: threads
+    };
+  }
+  var gate = null;
+  function preflight() {
+    if (typeof P.caps !== 'function') { start(); return; }
+    var fallback = setTimeout(function () { if (gate) gate(false); }, 5000);
+    gate = function (legacy) {
+      if (!gate) return;
+      gate = null;
+      clearTimeout(fallback);
+      if (legacy) window.EJS_forceLegacyCores = true;
+      start();
+    };
+    tell('caps', JSON.stringify(capabilities()));
+  }
   // Wait briefly for the app's gamepad bridge (document-start script) so pads are seen at once.
   var tries = 0;
   (function wait() {
-    if (window.__retrotvPad || tries++ > 15) start(); else setTimeout(wait, 100);
+    if (window.__retrotvPad || tries++ > 15) preflight(); else setTimeout(wait, 100);
   })();
 
   // ---- Save slots: files in the app (RetroTVSaves bridge, read back from /save/<dir>/) ----
@@ -252,6 +278,13 @@
     controls: function () { try { emu().controlMenu.style.display = ''; } catch (e) {} },
     hideMenu: function () { try { emu().menu.close(); } catch (e) {} },
     migrate: migrate,
+    // Pre-flight answers: go(legacy) starts the emulator; halt() stops the page for good (the app shows why).
+    go: function (legacy) { if (gate) gate(!!legacy); },
+    halt: function () {
+      gate = null;
+      begun = true;
+      clearInterval(watch);
+    },
     stats: stats,
     note: show
   };

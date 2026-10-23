@@ -8,10 +8,12 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -63,6 +65,12 @@ class PlayerUiState {
     var claiming by mutableStateOf<Int?>(null)
     var filter by mutableStateOf("disabled")
     var cheats by mutableStateOf(emptyList<Cheat>())
+    /** Game download so far / total (-1 unknown); null when nothing is being fetched. */
+    var fetch by mutableStateOf<Pair<Long, Long>?>(null)
+    /** The controls help is open; [helpAuto] closes it after a few seconds (first launch). */
+    var help by mutableStateOf(false)
+    var helpAuto by mutableStateOf(false)
+    var helpController by mutableStateOf(false)
 }
 
 interface PlayerActions {
@@ -84,6 +92,8 @@ interface PlayerActions {
     fun addCheats(text: String): Int
     fun claimPlayer(slot: Int)
     fun buttonLayout()
+    fun showHelp()
+    fun hideHelp()
     fun playOnSite()
     fun retry()
     fun exit()
@@ -112,6 +122,51 @@ fun PlayerOverlay(state: PlayerUiState, title: String, system: String, canPlayOn
             PlayerPanel.Players -> PlayersPanel(state, actions)
             PlayerPanel.Cheats -> CheatsPanel(state.cheats, actions::toggleCheat, actions::deleteCheat, actions::addCheats) { actions.openMenu() }
             is PlayerPanel.Failed -> FailedPanel(p.message, p.hint, canPlayOnSite, actions)
+        }
+        val fetch = state.fetch
+        if (fetch != null && !state.started && state.panel == null) FetchBar(fetch.first, fetch.second)
+        if (state.help) ControlsHelpCard(state, actions)
+    }
+}
+
+/** "Fetching game… 40%" with a determinate bar (indeterminate when the size is unknown). */
+@Composable
+private fun BoxScope.FetchBar(done: Long, total: Long) {
+    Column(
+        Modifier
+            .align(Alignment.BottomCenter)
+            .padding(bottom = 36.dp)
+            .fillMaxWidth(0.5f)
+            .background(Ink.copy(alpha = 0.92f), RoundedCornerShape(16.dp))
+            .padding(horizontal = 22.dp, vertical = 12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text(ProgressText.format(done, total), color = Color.White, fontSize = 17.sp)
+        val fraction = ProgressText.fraction(done, total)
+        if (fraction != null) LinearProgressIndicator(progress = { fraction }, Modifier.fillMaxWidth())
+        else LinearProgressIndicator(Modifier.fillMaxWidth())
+    }
+}
+
+/** What the buttons do; closes after 8 s on first launch (helpAuto) or on any key (see PlayerActivity). */
+@Composable
+private fun ControlsHelpCard(state: PlayerUiState, actions: PlayerActions) {
+    if (state.helpAuto) LaunchedEffect(Unit) {
+        delay(8000)
+        actions.hideHelp()
+    }
+    Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.6f)), contentAlignment = Alignment.Center) {
+        Column(
+            Modifier
+                .fillMaxWidth(0.7f)
+                .background(Ink.copy(alpha = 0.96f), RoundedCornerShape(20.dp))
+                .padding(28.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text(ControlsHelp.TITLE, color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
+            ControlsHelp.lines(state.helpController).forEach { Text(it, color = Color.White, fontSize = 17.sp) }
+            Text(ControlsHelp.DISMISS, color = TextDim, fontSize = 14.sp)
         }
     }
 }
@@ -143,6 +198,7 @@ private fun MenuPanel(state: PlayerUiState, title: String, system: String, canPl
         }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             MenuTile("🕹", "Button layout", actions::buttonLayout, Modifier.weight(1f))
+            MenuTile("❓", "Show controls help", actions::showHelp, Modifier.weight(1f))
             MenuTile("🛠", "Emulator settings (pointer)", actions::emulatorMenu, Modifier.weight(1f))
             if (canPlayOnSite) MenuTile("🌐", "Play on the site instead", actions::playOnSite, Modifier.weight(1f))
             MenuTile("⏻", "Exit game", actions::exit, Modifier.weight(1f))

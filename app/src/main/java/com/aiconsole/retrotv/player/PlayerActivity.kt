@@ -10,6 +10,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.ViewGroup
@@ -126,6 +127,9 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
             override fun handleOnBackPressed() = onBackKey()
         })
 
+        app.games.progressListener = { done, total ->
+            handler.post { ui.fetch = if (total in 1..done) null else done to total }
+        }
         app.library.record(request)
         FreezeWatchdog.context = "Player: ${request.core} ${request.displayTitle}"
         loadGame()
@@ -219,6 +223,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         }
         val qs = query.entries.joinToString("&") { (k, v) -> k + "=" + URLEncoder.encode(v, "UTF-8") }
         ui.started = false
+        ui.fetch = null
         webView?.loadUrl("${GameFiles.ORIGIN}/player/index.html?$qs")
     }
 
@@ -268,6 +273,15 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         if (isVolume(code)) return super.dispatchKeyEvent(event)
         if (swallowKey != -1 && code == swallowKey) {
             if (!down) swallowKey = -1
+            return true
+        }
+
+        // The controls help closes on any key; the key's release is swallowed so it doesn't reach the game.
+        if (ui.help) {
+            if (down) {
+                hideHelp()
+                swallowKey = code
+            }
             return true
         }
 
@@ -506,6 +520,51 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         toast("Pointer on: EmulatorJS menu at the bottom · Back to return to the game")
     }
 
+    override fun showHelp() {
+        ui.helpController = hasController()
+        ui.helpAuto = false
+        ui.help = true
+    }
+
+    override fun hideHelp() {
+        ui.help = false
+        ui.helpAuto = false
+    }
+
+    private fun hasController(): Boolean = InputDevice.getDeviceIds().any { id ->
+        val src = InputDevice.getDevice(id)?.sources ?: 0
+        src and InputDevice.SOURCE_GAMEPAD == InputDevice.SOURCE_GAMEPAD || src and InputDevice.SOURCE_JOYSTICK == InputDevice.SOURCE_JOYSTICK
+    }
+
+    /** First launch only: the controls card for 8 s (or until a key); later starts just toast the menu keys. */
+    private fun firstLaunchHelp() {
+        if (gamePrefs.getBoolean(HINT_SHOWN, false)) {
+            toast("Back or Menu: game menu (save, load, exit)")
+            return
+        }
+        gamePrefs.edit { putBoolean(HINT_SHOWN, true) }
+        showHelp()
+        ui.helpAuto = true
+    }
+
+    /** The page's capability report, before it downloads any emulator file: start, start with a warning, or stop. */
+    private fun onCaps(caps: Caps) {
+        when (val v = Preflight.verdict(request.core, caps)) {
+            Verdict.Ok -> js("go(false)")
+            is Verdict.Warn -> {
+                // No WebGL 2: the compatibility (WebGL 1) cores, chosen up front so the retry ladder skips that step.
+                legacy = true
+                attempt = maxOf(attempt, 2)
+                toast(v.message)
+                js("go(true)")
+            }
+            is Verdict.Block -> {
+                js("halt()")
+                show(PlayerPanel.Failed(v.message, if (v.suggestSitePlayer) Preflight.HINT else ""))
+            }
+        }
+    }
+
     override fun playOnSite() {
         js("flush()")
         if (callingActivity != null) {
@@ -541,7 +600,20 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         fun started() = handler.post {
             ui.started = true
             if (ui.cheats.isNotEmpty()) applyCheats()
-            if (ui.panel == null) toast("Back or Menu: game menu (save, load, exit)")
+            ui.fetch = null
+            if (ui.panel == null) firstLaunchHelp()
+        }
+
+        @JavascriptInterface
+        fun caps(json: String) {
+            val o = runCatching { JSONObject(json) }.getOrNull()
+            val caps = Caps(
+                webgl2 = o?.optBoolean("webgl2", true) ?: true,
+                sharedArrayBuffer = o?.optBoolean("sab", false) ?: false,
+                crossOriginIsolated = o?.optBoolean("isolated", false) ?: false,
+                wasmThreads = o?.optBoolean("threads", false) ?: false
+            )
+            handler.post { onCaps(caps) }
         }
 
         @JavascriptInterface
@@ -660,6 +732,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
 
     override fun onDestroy() {
         handler.removeCallbacksAndMessages(null)
+        app.games.progressListener = null
         webView?.let {
             root.removeView(it)
             it.destroy()
@@ -670,6 +743,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
 
     companion object {
         const val RESULT_PLAY_ON_SITE = 2
+        private const val HINT_SHOWN = "controls_hint_shown"
 
         fun intent(context: Context, request: GameRequest): Intent =
             request.toIntent(Intent(context, PlayerActivity::class.java))
