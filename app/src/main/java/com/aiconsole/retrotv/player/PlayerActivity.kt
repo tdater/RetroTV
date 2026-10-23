@@ -83,6 +83,13 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
     private var resumedAt = 0L
     private var rewinding = false
     private val gamePrefs by lazy { getSharedPreferences("game_prefs", Context.MODE_PRIVATE) }
+    /** The button layout for this start ([ControlProfiles.resolve]), read by the page through the bridge. */
+    @Volatile private var controlsProfile = ""
+    /** The Button layout screen is open: its result is kept as this game's own layout when it closes. */
+    private var layoutMode = false
+    private var coopDone = false
+    /** Starts the emulator once the optional Players screen is done. */
+    private var pendingGo: (() -> Unit)? = null
 
     private val inputListener = object : InputManager.InputDeviceListener {
         override fun onInputDeviceAdded(deviceId: Int) = Unit
@@ -131,6 +138,8 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
             handler.post { ui.fetch = if (total in 1..done) null else done to total }
         }
         app.library.record(request)
+        ui.systemId = Systems.of(request.core)?.id
+        ui.autoResume = gamePrefs.getBoolean(AutoResume.PREF, false)
         FreezeWatchdog.context = "Player: ${request.core} ${request.displayTitle}"
         loadGame()
     }
@@ -215,6 +224,10 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         if (app.settings.value.rewind) query["rewind"] = "1"
         ui.filter = gamePrefs.getString("filter_" + request.key, null) ?: app.settings.value.filter
         ui.cheats = CheatRules.decode(gamePrefs.getString("cheats_" + request.key, "").orEmpty())
+        controlsProfile = ControlProfiles.resolve(
+            gamePrefs.getString(ControlProfiles.gameKey(request.key), null),
+            ControlProfiles.systemKey(ui.systemId)?.let { gamePrefs.getString(it, null) }
+        ).orEmpty()
         if (ui.filter != "disabled") query["shader"] = ui.filter
         if (app.settings.value.sharpPixels) query["sharp"] = "1"
         if (threads) {
@@ -302,10 +315,15 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
                     when (ui.panel) {
                         is PlayerPanel.Failed -> exit()
                         PlayerPanel.Players -> { pads.claim(null); refreshPlayers(); show(PlayerPanel.Menu) }
+                        PlayerPanel.Coop -> finishCoop()
                         PlayerPanel.Cheats -> show(PlayerPanel.Menu)
                         else -> resume()
                     }
                 }
+                return true
+            }
+            if (ui.panel == PlayerPanel.Coop && code == KeyEvent.KEYCODE_BUTTON_START && VirtualPads.isController(event)) {
+                if (!down) finishCoop()
                 return true
             }
             if (code == KeyEvent.KEYCODE_BUTTON_START || code == KeyEvent.KEYCODE_BUTTON_SELECT) return true
@@ -384,6 +402,10 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
             } else cursor.pressUp()
             code == KeyEvent.KEYCODE_BACK || code == KeyEvent.KEYCODE_BUTTON_B || isMenuKey(code) -> if (!down) {
                 setPointer(false)
+                if (layoutMode) {
+                    layoutMode = false
+                    js("snapshot('game')")
+                }
                 js("hideMenu()")
                 js("pause(false)")
             }
@@ -416,7 +438,9 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
 
     // ---- PlayerActions ----
 
-    override fun resume() = show(null)
+    override fun resume() {
+        if (ui.panel == PlayerPanel.Coop) finishCoop() else show(null)
+    }
 
     override fun save() {
         js("save(${ui.slot})")
@@ -509,8 +533,80 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
     override fun buttonLayout() {
         ui.panel = null
         setPointer(true)
+        layoutMode = true
         js("controls()")
         toast("Pointer on: set each button, it's remembered for this game · Back to return to the game")
+    }
+
+    override fun useLayoutForConsole() {
+        if (ControlProfiles.systemKey(ui.systemId) == null) {
+            toast("RetroTV doesn't know this console, so it can't keep a layout for it")
+            return
+        }
+        // The page answers with snapshot(): the game's current layout becomes the console's.
+        js("snapshot('system')")
+        show(null)
+    }
+
+    override fun resetConsoleLayout() {
+        val key = ControlProfiles.systemKey(ui.systemId)
+        if (key == null) {
+            toast("RetroTV doesn't know this console")
+            return
+        }
+        gamePrefs.edit { remove(key) }
+        toast("${Systems.label(request.core)} layout reset · applies to games started from now on")
+    }
+
+    override fun toggleAutoResume() {
+        ui.autoResume = !ui.autoResume
+        gamePrefs.edit { putBoolean(AutoResume.PREF, ui.autoResume) }
+        toast(if (ui.autoResume) "Games will continue from their latest save" else "Auto-resume off")
+    }
+
+    /** The Players screen before the game is done (or skipped): start the emulator. */
+    override fun finishCoop() {
+        pads.claim(null)
+        refreshPlayers()
+        coopDone = true
+        show(null)
+        pendingGo?.invoke()
+        pendingGo = null
+    }
+
+    private fun onSnapshot(purpose: String, json: String) {
+        if (!ControlProfiles.isValid(json)) {
+            toast("Couldn't read the button layout")
+            return
+        }
+        when (purpose) {
+            "game" -> gamePrefs.edit { putString(ControlProfiles.gameKey(request.key), json) }
+            "system" -> {
+                val key = ControlProfiles.systemKey(ui.systemId) ?: return
+                gamePrefs.edit { putString(key, json) }
+                toast("This layout is now used for all ${Systems.label(request.core)} games")
+            }
+        }
+    }
+
+    /** Connected controllers and phones: the co-op screen only appears with more than one. */
+    private fun padCount(): Int {
+        val controllers = InputDevice.getDeviceIds().count { id ->
+            val src = InputDevice.getDevice(id)?.sources ?: 0
+            src and InputDevice.SOURCE_GAMEPAD == InputDevice.SOURCE_GAMEPAD || src and InputDevice.SOURCE_JOYSTICK == InputDevice.SOURCE_JOYSTICK
+        }
+        return controllers + PhonePads.connected.value
+    }
+
+    /** Starts the emulator, after the optional Players screen when several people can play. */
+    private fun startOrCoop(go: () -> Unit) {
+        if (!coopDone && CoopSetup.shouldShow(ui.systemId, padCount())) {
+            pendingGo = go
+            refreshPlayers()
+            show(PlayerPanel.Coop)
+        } else {
+            go()
+        }
     }
 
     override fun emulatorMenu() {
@@ -550,13 +646,13 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
     /** The page's capability report, before it downloads any emulator file: start, start with a warning, or stop. */
     private fun onCaps(caps: Caps) {
         when (val v = Preflight.verdict(request.core, caps)) {
-            Verdict.Ok -> js("go(false)")
+            Verdict.Ok -> startOrCoop { js("go(false)") }
             is Verdict.Warn -> {
                 // No WebGL 2: the compatibility (WebGL 1) cores, chosen up front so the retry ladder skips that step.
                 legacy = true
                 attempt = maxOf(attempt, 2)
                 toast(v.message)
-                js("go(true)")
+                startOrCoop { js("go(true)") }
             }
             is Verdict.Block -> {
                 js("halt()")
@@ -587,8 +683,23 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
 
     override fun exit() {
         js("flush()")
+        // Auto-resume: save to the latest slot first so the next start continues from here.
+        var wait = 250L
+        if (ui.autoResume && ui.started) {
+            val slot = AutoResume.pickSlot(app.saves.slots(request.key)) ?: ui.slot
+            js("save($slot)")
+            wait = 1500L
+        }
         ui.panel = null
-        handler.postDelayed({ finish() }, 250)
+        handler.postDelayed({ finish() }, wait)
+    }
+
+    /** Auto-resume: load the game's latest slot shortly after the emulator started. */
+    private fun autoResumeNow() {
+        if (!ui.autoResume) return
+        val slot = AutoResume.pickSlot(app.saves.slots(request.key)) ?: return
+        ui.slot = slot
+        handler.postDelayed({ js("load($slot)") }, 800)
     }
 
     /** Calls from the player page (binder threads). */
@@ -597,8 +708,16 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         fun ready() = Unit
 
         @JavascriptInterface
+        fun profile(): String = controlsProfile
+
+        @JavascriptInterface
+        fun snapshot(purpose: String, json: String) = handler.post { onSnapshot(purpose, json) }
+
+        @JavascriptInterface
         fun started() = handler.post {
+            val first = !ui.started
             ui.started = true
+            if (first) autoResumeNow()
             if (ui.cheats.isNotEmpty()) applyCheats()
             ui.fetch = null
             if (ui.panel == null) firstLaunchHelp()

@@ -45,6 +45,8 @@ sealed interface PlayerPanel {
     data object Menu : PlayerPanel
     data object Players : PlayerPanel
     data object Cheats : PlayerPanel
+    /** Optional player setup before a multiplayer game starts. */
+    data object Coop : PlayerPanel
     data class Failed(val message: String, val hint: String = "") : PlayerPanel
 }
 
@@ -71,6 +73,9 @@ class PlayerUiState {
     var help by mutableStateOf(false)
     var helpAuto by mutableStateOf(false)
     var helpController by mutableStateOf(false)
+    var autoResume by mutableStateOf(false)
+    /** The console's [Systems] id (player count for the co-op screen). */
+    var systemId by mutableStateOf<String?>(null)
 }
 
 interface PlayerActions {
@@ -92,6 +97,10 @@ interface PlayerActions {
     fun addCheats(text: String): Int
     fun claimPlayer(slot: Int)
     fun buttonLayout()
+    fun useLayoutForConsole()
+    fun resetConsoleLayout()
+    fun toggleAutoResume()
+    fun finishCoop()
     fun showHelp()
     fun hideHelp()
     fun playOnSite()
@@ -120,6 +129,7 @@ fun PlayerOverlay(state: PlayerUiState, title: String, system: String, canPlayOn
             null -> Unit
             PlayerPanel.Menu -> MenuPanel(state, title, system, canPlayOnSite, actions)
             PlayerPanel.Players -> PlayersPanel(state, actions)
+            PlayerPanel.Coop -> CoopPanel(state, actions)
             PlayerPanel.Cheats -> CheatsPanel(state.cheats, actions::toggleCheat, actions::deleteCheat, actions::addCheats) { actions.openMenu() }
             is PlayerPanel.Failed -> FailedPanel(p.message, p.hint, canPlayOnSite, actions)
         }
@@ -203,6 +213,11 @@ private fun MenuPanel(state: PlayerUiState, title: String, system: String, canPl
             if (canPlayOnSite) MenuTile("🌐", "Play on the site instead", actions::playOnSite, Modifier.weight(1f))
             MenuTile("⏻", "Exit game", actions::exit, Modifier.weight(1f))
         }
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            MenuTile("⏯", if (state.autoResume) "Auto-resume: on" else "Auto-resume: off", actions::toggleAutoResume, Modifier.weight(1f), selected = state.autoResume)
+            MenuTile("📌", "Use this layout for all $system games", actions::useLayoutForConsole, Modifier.weight(1f))
+            MenuTile("♻", "Reset $system layout", actions::resetConsoleLayout, Modifier.weight(1f))
+        }
         Text(
             "Controller: Select + Start opens this menu · Select + L1 quick save, Select + R1 quick load (slot $slot), " +
                 "hold Select + L2 to rewind, Select + R2 fast-forward. Remote: Back or Menu. Without a controller the remote plays: " +
@@ -255,6 +270,23 @@ private fun PlayersPanel(state: PlayerUiState, actions: PlayerActions) {
             )
         }
         Text("Back returns to the game menu.", color = TextDim, fontSize = 13.sp)
+    }
+}
+
+/** Before a multiplayer game starts: who is player 1-4. Skippable; Continue, Start (no row chosen) or Back begins the game. */
+@Composable
+private fun CoopPanel(state: PlayerUiState, actions: PlayerActions) {
+    val first = remember { FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { first.requestFocus() } }
+    OverlayPanel("Who's playing?", Modifier.fillMaxSize(), widthFraction = 0.6f) {
+        Text("Choose a player, then press Start on the controller that should be that player.", color = TextDim, fontSize = 14.sp)
+        val labels = CoopSetup.labels(state.systemId, state.players, state.claiming)
+        labels.forEachIndexed { i, label ->
+            val waiting = state.claiming == i
+            TvButton(label, { actions.claimPlayer(i) }, if (i == 0) Modifier.focusRequester(first) else Modifier, icon = if (waiting) "⏳" else "🎮", selected = waiting)
+        }
+        TvButton("Start the game", actions::finishCoop, icon = "▶")
+        Text("Back skips this. You can change players later in the game menu.", color = TextDim, fontSize = 13.sp)
     }
 }
 

@@ -197,6 +197,13 @@ fun SettingsScreen(onBack: () -> Unit, onNavigate: (Screen) -> Unit) {
                     }, subtitle = "The least recently used covers are deleted when the cache grows past this")
                 }
                 item {
+                    val preload = remember { com.aiconsole.retrotv.player.Preload.from(context) }
+                    val preloadStatus by preload.status.collectAsState()
+                    var preloadOn by remember { mutableStateOf(preload.enabled) }
+                    ToggleRow("Preload cores on Wi-Fi", preloadOn, { v -> preloadOn = v; preload.enabled = v },
+                        subtitle = "$preloadStatus. Downloads the emulators of your most-played consoles in the background (Wi-Fi only, up to 150 MB every 12 hours).")
+                }
+                item {
                     SettingRow("Play without internet", if (showOffline) "Hide" else "Choose consoles", { showOffline = !showOffline },
                         subtitle = "Download a console's emulator now so its games start even when the internet is down")
                 }

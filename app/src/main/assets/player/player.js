@@ -40,6 +40,12 @@
   if (q.get('shader')) window.EJS_defaultOptions.shader = q.get('shader');
   if (q.get('sharp') === '1') document.documentElement.classList.add('sharp');
   window.EJS_Buttons = { netplay: false };
+  // The button layout for this game or its console (the app resolves game > console); EmulatorJS's own
+  // saved layout for the game still wins over these defaults.
+  try {
+    var layout = typeof P.profile === 'function' ? P.profile() : '';
+    if (layout) window.EJS_defaultControls = JSON.parse(layout);
+  } catch (e) {}
   if (q.get('legacy') === '1') window.EJS_forceLegacyCores = true;
   window.EJS_threads = q.get('threads') === '1' && typeof SharedArrayBuffer === 'function' && self.crossOriginIsolated === true;
   window.EJS_ready = function () { tell('ready'); };
@@ -276,6 +282,10 @@
     menu: function () { try { emu().menu.open(true); } catch (e) {} },
     // EmulatorJS's own button-layout screen; it saves the layout per game.
     controls: function () { try { emu().controlMenu.style.display = ''; } catch (e) {} },
+    // Reports the current button layout as JSON; purpose says what the app does with it ('game' or 'system').
+    snapshot: function (purpose) {
+      try { tell('snapshot', purpose, JSON.stringify(emu().controls)); } catch (e) { tell('snapshot', purpose, ''); }
+    },
     hideMenu: function () { try { emu().menu.close(); } catch (e) {} },
     migrate: migrate,
     // Pre-flight answers: go(legacy) starts the emulator; halt() stops the page for good (the app shows why).

@@ -111,6 +111,7 @@ fun HomeScreen(onNavigate: (Screen) -> Unit, onOpen: (Site) -> Unit, onOpenUrl: 
     // The hero (when it is showing) takes the first focus so OK resumes the last game.
     LaunchedEffect(Unit) { runCatching { if (filter == ALL && HomeLayout.HERO in order) heroFocus.requestFocus() else firstCard.requestFocus() } }
     LaunchedEffect(Unit) { if (app.health.isDue()) runCatching { app.health.checkAll(all) } }
+    LaunchedEffect(Unit) { runCatching { com.aiconsole.retrotv.player.Preload.from(context).start() } }
 
     Box(Modifier.fillMaxSize()) {
         LazyVerticalGrid(
