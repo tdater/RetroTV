@@ -91,6 +91,12 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
     private var coopDone = false
     /** Starts the emulator once the optional Players screen is done. */
     private var pendingGo: (() -> Unit)? = null
+    /** Read by the page on a binder thread: the Players screen is waiting for "Start the game". */
+    @Volatile private var coopHold = false
+    /** The auto-resume save on exit is in flight; the page's "saved" answer closes the player. */
+    private var exitSaving = false
+    /** This instance is counted in [PlayerOpen]. */
+    private var counted = false
 
     private val inputListener = object : InputManager.InputDeviceListener {
         override fun onInputDeviceAdded(deviceId: Int) = Unit
@@ -106,6 +112,8 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
             finish()
             return
         }
+        PlayerOpen.enter()
+        counted = true
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         displayHz = runCatching { DisplayModes.preferSixtyHz(this) }.getOrDefault(0f)
         WindowCompat.setDecorFitsSystemWindows(window, false)
@@ -298,7 +306,8 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         if (fpsSamples.size > StutterRules.WINDOW) fpsSamples.removeAt(0)
         if (perfCount % 10 == 1) updateContext()
         val asked = gamePrefs.getBoolean(CHOPPY_PREFIX + request.key, false)
-        if (!ui.smooth && !asked && StutterRules.shouldPrompt(fpsSamples, StutterRules.targetFps(ui.systemId))) {
+        val target = StutterRules.effectiveTarget(StutterRules.targetFps(ui.systemId), displayHz)
+        if (!ui.smooth && !asked && StutterRules.shouldPrompt(fpsSamples, target, screen)) {
             gamePrefs.edit { putBoolean(CHOPPY_PREFIX + request.key, true) }
             show(PlayerPanel.Choppy)
         }
@@ -688,6 +697,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         pads.claim(null)
         refreshPlayers()
         coopDone = true
+        coopHold = false
         show(null)
         pendingGo?.invoke()
         pendingGo = null
@@ -710,17 +720,16 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
 
     /** Connected controllers and phones: the co-op screen only appears with more than one. */
     private fun padCount(): Int {
-        val controllers = InputDevice.getDeviceIds().count { id ->
-            val src = InputDevice.getDevice(id)?.sources ?: 0
-            src and InputDevice.SOURCE_GAMEPAD == InputDevice.SOURCE_GAMEPAD || src and InputDevice.SOURCE_JOYSTICK == InputDevice.SOURCE_JOYSTICK
-        }
-        return controllers + PhonePads.connected.value
+        val devices = InputDevice.getDeviceIds().toList().mapNotNull { InputDevice.getDevice(it) }
+            .map { PadDevice(it.descriptor.orEmpty().ifEmpty { "id${it.id}" }, it.sources, it.isVirtual) }
+        return CoopSetup.countControllers(devices) + PhonePads.connected.value
     }
 
     /** Starts the emulator, after the optional Players screen when several people can play. */
     private fun startOrCoop(go: () -> Unit) {
         if (!coopDone && CoopSetup.shouldShow(ui.systemId, padCount())) {
             pendingGo = go
+            coopHold = true
             refreshPlayers()
             show(PlayerPanel.Coop)
         } else {
@@ -768,10 +777,13 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
             Verdict.Ok -> startOrCoop { js("go(false)") }
             is Verdict.Warn -> {
                 // No WebGL 2: the compatibility (WebGL 1) cores, chosen up front so the retry ladder skips that step.
-                legacy = true
-                attempt = maxOf(attempt, 2)
                 toast(v.message)
-                startOrCoop { js("go(true)") }
+                // Set when the game really starts (after the Players screen), so a hold never skips the legacy retry.
+                startOrCoop {
+                    legacy = true
+                    attempt = maxOf(attempt, 2)
+                    js("go(true)")
+                }
             }
             is Verdict.Block -> {
                 js("halt()")
@@ -802,22 +814,23 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
 
     override fun exit() {
         js("flush()")
-        // Auto-resume: save to the latest slot first so the next start continues from here.
-        var wait = 250L
-        if (ui.autoResume && ui.started) {
-            val slot = AutoResume.pickSlot(app.saves.slots(request.key)) ?: ui.slot
-            js("save($slot)")
-            wait = 1500L
-        }
         ui.panel = null
-        handler.postDelayed({ finish() }, wait)
+        if (ui.autoResume && ui.started) {
+            // Auto-resume: save to the hidden auto slot (the manual slots stay as the player left them),
+            // and close when the page reports it saved; if it never answers, close anyway.
+            exitSaving = true
+            js("save(${SaveNames.AUTO})")
+            handler.postDelayed({ finish() }, AutoResume.EXIT_CAP_MS)
+        } else {
+            handler.postDelayed({ finish() }, 250L)
+        }
     }
 
-    /** Auto-resume: load the game's latest slot shortly after the emulator started. */
+    /** Auto-resume: load the hidden auto slot (else the newest manual slot) shortly after the emulator started. */
     private fun autoResumeNow() {
         if (!ui.autoResume) return
-        val slot = AutoResume.pickSlot(app.saves.slots(request.key)) ?: return
-        ui.slot = slot
+        val slot = AutoResume.pickSlot(app.saves.slots(request.key), app.saves.autoTime(request.key)) ?: return
+        if (slot != SaveNames.AUTO) ui.slot = slot
         handler.postDelayed({ js("load($slot)") }, 800)
     }
 
@@ -825,6 +838,10 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
     private inner class PlayerBridge {
         @JavascriptInterface
         fun ready() = Unit
+
+        /** True while the Players (co-op) screen is open: the page's start fallback keeps waiting. */
+        @JavascriptInterface
+        fun holding(): Boolean = coopHold
 
         @JavascriptInterface
         fun profile(): String = controlsProfile
@@ -867,7 +884,10 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
 
         @JavascriptInterface
         fun saved(slot: Int, ok: Boolean, message: String) = handler.post {
-            if (ok) refreshSlots() else toast("Couldn't save: $message")
+            if (slot == SaveNames.AUTO) {
+                // The exit save is done (or failed): nothing left to wait for.
+                if (exitSaving) finish()
+            } else if (ok) refreshSlots() else toast("Couldn't save: $message")
         }
 
         @JavascriptInterface
@@ -975,6 +995,10 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
     }
 
     override fun onDestroy() {
+        if (counted) {
+            counted = false
+            PlayerOpen.leave()
+        }
         handler.removeCallbacksAndMessages(null)
         app.games.progressListener = null
         webView?.let {

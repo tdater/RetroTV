@@ -30,11 +30,11 @@ class SaveStore(context: Context) {
 
     /** Starts an upload; null when the slot is out of range or the state is too large. */
     fun open(gameKey: String, slot: Int, size: Long): String? {
-        if (slot !in 1..SaveNames.SLOTS || size <= 0 || size > SaveNames.MAX_STATE) return null
+        if (slot !in SaveNames.AUTO..SaveNames.SLOTS || size <= 0 || size > SaveNames.MAX_STATE) return null
         val dir = dir(gameKey).apply { mkdirs() }
         File(dir, "game.txt").takeIf { !it.exists() }?.writeText(gameKey)
         val token = UUID.randomUUID().toString().replace("-", "")
-        val part = File(dir, "slot$slot.state.part").apply { delete() }
+        val part = File(dir, SaveNames.stem(slot) + ".state.part").apply { delete() }
         uploads[token] = Upload(dir, slot, part, size)
         return token
     }
@@ -60,22 +60,26 @@ class SaveStore(context: Context) {
     fun close(token: String, pngBase64: String?): Boolean {
         val up = uploads.remove(token) ?: return false
         synchronized(up) {
-            val target = File(up.dir, "slot${up.slot}.state")
+            val stem = SaveNames.stem(up.slot)
+            val target = File(up.dir, "$stem.state")
             // rename(2) replaces the old slot atomically, so a failed save never leaves it half-written.
             if (up.failed || up.written != up.size || !up.part.renameTo(target)) {
                 up.part.delete()
                 return false
             }
-            val png = File(up.dir, "slot${up.slot}.png")
+            val png = File(up.dir, "$stem.png")
             val bytes = pngBase64?.takeIf { it.isNotBlank() }?.let { runCatching { Base64.decode(it, Base64.DEFAULT) }.getOrNull() }
             if (bytes != null) runCatching { png.writeBytes(bytes) } else png.delete()
             return true
         }
     }
 
-    fun file(gameKey: String, slot: Int): File? = File(dir(gameKey), "slot$slot.state").takeIf { it.isFile }
+    fun file(gameKey: String, slot: Int): File? = File(dir(gameKey), SaveNames.stem(slot) + ".state").takeIf { it.isFile }
 
-    fun thumbnail(gameKey: String, slot: Int): File? = File(dir(gameKey), "slot$slot.png").takeIf { it.isFile }
+    fun thumbnail(gameKey: String, slot: Int): File? = File(dir(gameKey), SaveNames.stem(slot) + ".png").takeIf { it.isFile }
+
+    /** When the auto-resume state was saved, or null when there is none. */
+    fun autoTime(gameKey: String): Long? = file(gameKey, SaveNames.AUTO)?.lastModified()
 
     /** Filled slots of a game: slot → time saved. */
     fun slots(gameKey: String): Map<Int, Long> =

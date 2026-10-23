@@ -351,11 +351,12 @@ class GameFiles(context: Context) {
                 pushback.unread(buf, 0, n)
                 stream = pushback
             }
-            val part = File(target.parentFile, target.name + ".part")
+            // A temp file per download: two fetches of one file (preload and the player) must not share it.
+            val part = File(target.parentFile, target.name + "." + UUID.randomUUID().toString().take(8) + ".part")
             val report = if (validateRom) progressListener else null
             val body = SavingStream(stream, part, length, report) { complete ->
                 conn.disconnect()
-                if (complete && part.renameTo(target)) {
+                if (complete && part.length() > 0 && part.renameTo(target)) {
                     if (target.parentFile == romDir) trim()
                 } else {
                     part.delete()
@@ -401,9 +402,11 @@ class GameFiles(context: Context) {
      * Downloads what [core] needs to start without the internet. Finished files stay even when a
      * later one fails. Returns false when a required file couldn't be fetched. Call off the main thread.
      */
-    fun prefetch(core: String, onProgress: (done: Int, total: Int) -> Unit): Boolean {
+    fun prefetch(core: String, pause: () -> Boolean = { false }, onProgress: (done: Int, total: Int) -> Unit): Boolean {
         val files = CoreFiles.forCore(core)
         files.forEachIndexed { i, path ->
+            // Background preloading steps aside the moment a game is open.
+            if (pause()) return false
             onProgress(i, files.size)
             val target = emulatorFile(path)
             if (target.length() > 0) return@forEachIndexed

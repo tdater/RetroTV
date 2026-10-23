@@ -16,6 +16,14 @@ import kotlinx.coroutines.launch
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
 
+/** How many player screens are open; background preloading waits while any is (it would compete for bandwidth and files). */
+object PlayerOpen {
+    private val count = java.util.concurrent.atomic.AtomicInteger(0)
+    val isOpen: Boolean get() = count.get() > 0
+    fun enter() { count.incrementAndGet() }
+    fun leave() { count.updateAndGet { (it - 1).coerceAtLeast(0) } }
+}
+
 /** What the library says about one game, reduced to what [PreloadRules] needs. */
 data class CoreUsage(val core: String, val plays: Int, val playMs: Long)
 
@@ -126,21 +134,26 @@ class Preload private constructor(context: Context) {
             if (targets.isEmpty()) { refreshStatus(); return }
             var downloaded = 0L
             var failed = false
+            var paused = false
             for (core in targets) {
+                if (PlayerOpen.isOpen) { paused = true; break }
                 if (retro.games.isOffline(core)) continue
                 if (!PreloadRules.mayContinue(downloaded, freeBytes())) break
                 _status.value = "Preloading " + label(core) + "…"
                 val before = retro.games.emulatorSize()
                 val ok = try {
-                    retro.games.prefetch(core) { _, _ -> }
+                    retro.games.prefetch(core, { PlayerOpen.isOpen }) { _, _ -> }
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
                     false
                 }
                 downloaded += (retro.games.emulatorSize() - before).coerceAtLeast(0)
+                if (PlayerOpen.isOpen) { paused = true; break }
                 if (!ok) { failed = true; break }
             }
+            // A game was opened: leave the timestamp alone so the next home-screen visit tries again.
+            if (paused) { refreshStatus(); return }
             prefs.edit {
                 // A failed run is retried after an hour rather than 12.
                 putLong("last", if (failed) now - PreloadRules.INTERVAL_MS + PreloadRules.RETRY_MS else now)
@@ -153,7 +166,7 @@ class Preload private constructor(context: Context) {
         }
     }
 
-    private fun label(core: String) = Systems.byId(core)?.label ?: core
+    private fun label(core: String) = Systems.label(core)
 
     companion object {
         @Volatile private var instance: Preload? = null

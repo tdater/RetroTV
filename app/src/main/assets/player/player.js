@@ -114,7 +114,16 @@
   var gate = null;
   function preflight() {
     if (typeof P.caps !== 'function') { start(); return; }
-    var fallback = setTimeout(function () { if (gate) gate(false); }, 5000);
+    // The app holds the start while its Players (co-op) screen is open; the fallback then keeps waiting.
+    var fallback = 0;
+    function arm() {
+      fallback = setTimeout(function () {
+        if (!gate) return;
+        var held = false;
+        try { held = typeof P.holding === 'function' && !!P.holding(); } catch (e) {}
+        if (held) arm(); else gate(false);
+      }, 5000);
+    }
     gate = function (legacy) {
       if (!gate) return;
       gate = null;
@@ -122,6 +131,7 @@
       if (legacy) window.EJS_forceLegacyCores = true;
       start();
     };
+    arm();
     tell('caps', JSON.stringify(capabilities()));
   }
   // Wait briefly for the app's gamepad bridge (document-start script) so pads are seen at once.
@@ -265,14 +275,14 @@
       screenshot(e).then(function (png) {
         var err = upload(slot, data, png);
         if (err) { tell('saved', slot, false, err); return; }
-        show('Saved to slot ' + slot);
+        if (slot) show('Saved to slot ' + slot);
         tell('saved', slot, true, '');
       });
     },
     load: function (slot) {
       var e;
       try { e = emu(); } catch (x) { tell('loaded', slot, false, String(x.message)); return; }
-      fetch('/save/' + dir + '/slot' + slot + '.state', { cache: 'no-store' })
+      fetch('/save/' + dir + '/' + (slot ? 'slot' + slot : 'auto') + '.state', { cache: 'no-store' })
         .then(function (r) { return r.ok ? r.arrayBuffer() : null; })
         .then(function (buf) {
           // A save too large to move out of IndexedDB (see migrate) still loads from there.
@@ -282,9 +292,9 @@
             .then(function (v) { return v && v.data ? bytes(v.data) : null; }, function () { return null; });
         })
         .then(function (buf) {
-          if (!buf || !buf.byteLength) { tell('loaded', slot, false, 'Slot ' + slot + ' is empty'); return; }
+          if (!buf || !buf.byteLength) { tell('loaded', slot, false, (slot ? 'Slot ' + slot : 'Auto-resume save') + ' is empty'); return; }
           e.gameManager.loadState(new Uint8Array(buf));
-          show('Loaded slot ' + slot);
+          show(slot ? 'Loaded slot ' + slot : 'Continued where you left off');
           tell('loaded', slot, true, '');
         })
         .catch(function (x) { tell('loaded', slot, false, String(x && x.message || x)); });

@@ -5,16 +5,34 @@ object AutoResume {
     /** `game_prefs` flag; off by default. */
     const val PREF = "auto_resume"
 
-    /** The most recently saved slot (lowest number on a tie), or null when nothing is saved. */
-    fun pickSlot(slotsWithTimestamps: Map<Int, Long>): Int? =
-        slotsWithTimestamps.entries
+    /** How long the exit save may take before the player closes anyway. */
+    const val EXIT_CAP_MS = 8_000L
+
+    /**
+     * What to load at start: the hidden auto slot ([SaveNames.AUTO]) when [autoTime] says one exists, else the
+     * most recently saved manual slot (lowest number on a tie), or null when nothing is saved.
+     */
+    fun pickSlot(slotsWithTimestamps: Map<Int, Long>, autoTime: Long? = null): Int? =
+        if (autoTime != null) SaveNames.AUTO else slotsWithTimestamps.entries
             .filter { it.key in 1..SaveNames.SLOTS }
             .sortedWith(compareByDescending<Map.Entry<Int, Long>> { it.value }.thenBy { it.key })
             .firstOrNull()?.key
 }
 
+/** What the co-op check needs to know about one input device. */
+data class PadDevice(val descriptor: String, val sources: Int, val isVirtual: Boolean)
+
 /** The optional "Players" screen shown before a multiplayer game starts (pure, unit-tested). */
 object CoopSetup {
+
+    // Same bits as android.view.InputDevice.SOURCE_GAMEPAD / SOURCE_JOYSTICK (the same test VirtualPads.isController uses).
+    private const val SOURCE_GAMEPAD = 0x00000401
+    private const val SOURCE_JOYSTICK = 0x01000010
+
+    /** Real controllers: gamepad or joystick sources, no virtual devices, one per descriptor (a pad can expose several nodes). */
+    fun countControllers(devices: List<PadDevice>): Int = devices
+        .filter { !it.isVirtual && ((it.sources and SOURCE_GAMEPAD) == SOURCE_GAMEPAD || (it.sources and SOURCE_JOYSTICK) == SOURCE_JOYSTICK) }
+        .map { it.descriptor }.distinct().size
 
     /** Players each console supports in EmulatorJS (anything not listed is single player). */
     private val PLAYERS = mapOf(

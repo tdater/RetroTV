@@ -204,6 +204,11 @@ internal fun BrowserActivity.browserChrome(): WebChromeClient = object : WebChro
 
 internal fun BrowserActivity.handlePopup(url: String) {
     val scheme = url.substringBefore(':', "").lowercase()
+    if (scheme == "blob" || scheme == "data") {
+        // Page-made content (no host to filter), like normal navigation allows.
+        webView?.loadUrl(url)
+        return
+    }
     if (scheme != "http" && scheme != "https" && scheme != "about") {
         handleExternalScheme(url)
         return

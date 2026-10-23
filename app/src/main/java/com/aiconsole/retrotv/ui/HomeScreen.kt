@@ -33,6 +33,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -75,6 +76,7 @@ fun HomeScreen(onNavigate: (Screen) -> Unit, onOpen: (Site) -> Unit, onOpenUrl: 
     var dialog by remember { mutableStateOf<String?>(null) } // "go", "add", "rename"
     var refresh by remember { mutableStateOf(0) }
     val firstCard = remember { FocusRequester() }
+    val headerFocus = remember { FocusRequester() }
 
     val all = remember(custom) { app.sites.all() }
     val visible = all.filter { it.id !in prefs.hiddenSites }
@@ -109,7 +111,15 @@ fun HomeScreen(onNavigate: (Screen) -> Unit, onOpen: (Site) -> Unit, onOpenUrl: 
         }
     }
     // The hero (when it is showing) takes the first focus so OK resumes the last game.
-    LaunchedEffect(Unit) { runCatching { if (filter == ALL && HomeLayout.HERO in order) heroFocus.requestFocus() else firstCard.requestFocus() } }
+    // If that row isn't composed (hidden in Settings, or not laid out yet), retry once a frame later, then use the header.
+    LaunchedEffect(Unit) {
+        val wanted = if (filter == ALL && HomeLayout.HERO in order) heroFocus else firstCard
+        fun tryFocus(r: FocusRequester): Boolean = try { r.requestFocus() } catch (e: IllegalStateException) { false }
+        if (!tryFocus(wanted)) {
+            withFrameNanos { }
+            if (!tryFocus(wanted) && !tryFocus(firstCard)) tryFocus(headerFocus)
+        }
+    }
     LaunchedEffect(Unit) { if (app.health.isDue()) runCatching { app.health.checkAll(all) } }
     LaunchedEffect(Unit) { runCatching { com.aiconsole.retrotv.player.Preload.from(context).start() } }
 
@@ -121,7 +131,7 @@ fun HomeScreen(onNavigate: (Screen) -> Unit, onOpen: (Site) -> Unit, onOpenUrl: 
             modifier = Modifier.fillMaxSize()
         ) {
             item(span = { GridItemSpan(maxLineSpan) }) {
-                Header(prefs.showClock, onNavigate, onGo = { dialog = "go" }, onPlayRom = roms.open, onSurprise = surprise)
+                Header(prefs.showClock, onNavigate, onGo = { dialog = "go" }, onPlayRom = roms.open, onSurprise = surprise, firstFocus = headerFocus)
             }
             if (note.isNotEmpty()) {
                 item(span = { GridItemSpan(maxLineSpan) }) { Text(note, color = MaterialTheme.colorScheme.primary, fontSize = 15.sp) }
@@ -258,7 +268,7 @@ fun HomeScreen(onNavigate: (Screen) -> Unit, onOpen: (Site) -> Unit, onOpenUrl: 
 }
 
 @Composable
-private fun Header(showClock: Boolean, onNavigate: (Screen) -> Unit, onGo: () -> Unit, onPlayRom: () -> Unit, onSurprise: () -> Unit) {
+private fun Header(showClock: Boolean, onNavigate: (Screen) -> Unit, onGo: () -> Unit, onPlayRom: () -> Unit, onSurprise: () -> Unit, firstFocus: FocusRequester) {
     Column(Modifier.fillMaxWidth().padding(bottom = 6.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Column {
@@ -282,7 +292,7 @@ private fun Header(showClock: Boolean, onNavigate: (Screen) -> Unit, onGo: () ->
         }
         // Their own row: next to the logo and clock they ran out of room on a TV and were cut off.
         LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            item { TvButton("Go to a site", onGo, icon = "🔍") }
+            item { TvButton("Go to a site", onGo, Modifier.focusRequester(firstFocus), icon = "🔍") }
             item { TvButton("My games", { onNavigate(Screen.Library) }, icon = "🕹") }
             item { TvButton("Surprise me", onSurprise, icon = "🎲") }
             item { TvButton("Search all sites", { onNavigate(Screen.Search) }, icon = "🔎") }

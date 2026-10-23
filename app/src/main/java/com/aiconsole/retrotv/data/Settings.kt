@@ -85,7 +85,12 @@ data class SitePrefs(
 class Settings(context: Context) {
 
     private val prefs = context.applicationContext.getSharedPreferences("settings", Context.MODE_PRIVATE)
-    private val lowEnd = prefs.contains("smoothMode").not() && DevicePerf.detect(context.applicationContext)
+    private val lowEnd = prefs.contains("smoothMode").not() && DevicePerf.detect(context.applicationContext) &&
+        DevicePerf.mayDefaultToSmooth(
+            prefs.getString("filter", "disabled").orEmpty(),
+            prefs.getBoolean("rewind", false),
+            context.applicationContext.getSharedPreferences("game_prefs", Context.MODE_PRIVATE).all.keys.any { it.startsWith("filter_") }
+        )
     private val _state = MutableStateFlow(load())
     val state: StateFlow<Prefs> = _state.asStateFlow()
     val value: Prefs get() = _state.value

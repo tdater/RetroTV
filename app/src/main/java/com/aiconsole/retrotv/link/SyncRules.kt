@@ -8,7 +8,7 @@ data class SaveFileInfo(val path: String, val modified: Long, val size: Long)
 /** Which saves two RetroTVs swap (pure, unit-tested): the newer copy wins, nothing is ever deleted. */
 object SyncRules {
 
-    private val VALID = Regex("[0-9a-f]{24}/(slot[1-4]\\.(state|png)|game\\.txt)")
+    private val VALID = Regex("[0-9a-f]{24}/((slot[1-4]|auto)\\.(state|png)|game\\.txt)")
     private const val SAME_MS = 2_000L
 
     fun isValid(path: String) = VALID.matches(path)

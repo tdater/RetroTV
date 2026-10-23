@@ -98,8 +98,11 @@ fun ManageCollections(onClose: () -> Unit) {
     var renaming by remember { mutableStateOf<GameCollection?>(null) }
     var creating by remember { mutableStateOf(false) }
     var confirm by remember { mutableStateOf<String?>(null) }
+    var refocus by remember { mutableStateOf(0) }
     val first = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { first.requestFocus() } }
+    // A deleted collection takes its focused button along: put focus on "New collection…".
+    LaunchedEffect(refocus) { if (refocus > 0) runCatching { first.requestFocus() } }
     BackHandler { onClose() }
 
     OverlayPanel("Collections", Modifier.fillMaxSize(), widthFraction = 0.7f) {
@@ -112,7 +115,7 @@ fun ManageCollections(onClose: () -> Unit) {
                         color = Color.White, fontSize = 18.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f)
                     )
                     TvButton("Rename", { renaming = c }, icon = "✏")
-                    if (confirm == c.id) TvButton("Really delete?", { store.delete(c.id); confirm = null }, icon = "🗑", selected = true)
+                    if (confirm == c.id) TvButton("Really delete?", { store.delete(c.id); confirm = null; refocus++ }, icon = "🗑", selected = true)
                     else TvButton("Delete", { confirm = c.id }, icon = "🗑")
                 }
             }

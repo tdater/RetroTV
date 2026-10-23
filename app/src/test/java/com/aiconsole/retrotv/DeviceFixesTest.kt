@@ -18,7 +18,8 @@ class DeviceFixesTest {
 
     @Test fun lowRamFlagIsLowEnd() = assertTrue(DevicePerf.isLowEnd(8, 8000, true))
 
-    @Test fun fourGigabytesIsLowEnd() = assertTrue(DevicePerf.isLowEnd(8, 4096, false))
+    // Low-end now needs few cores AND little memory (ReviewFixesTest covers the either-alone cases).
+    @Test fun fourGigabytesAndFourCoresIsLowEnd() = assertTrue(DevicePerf.isLowEnd(4, 4096, false))
 
     @Test fun eightCoresAndPlentyOfMemoryIsNot() = assertFalse(DevicePerf.isLowEnd(8, 8192, false))
 
