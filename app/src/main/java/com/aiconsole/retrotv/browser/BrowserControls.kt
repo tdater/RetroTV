@@ -19,6 +19,7 @@ import kotlinx.coroutines.launch
 // The browser's toolbar and menu commands ([BrowserActions]).
 
 internal fun BrowserActivity.browserControls(): BrowserActions = object : BrowserActions {
+    // (fixThisPage: see below; the ladder itself is in FixLadder.kt)
 
     override fun show(panel: Panel?) {
         ui.panel = panel
@@ -149,6 +150,50 @@ internal fun BrowserActivity.browserControls(): BrowserActions = object : Browse
         applySiteSettings(ui.host)
         releaseKeys()
         toast("Controller: ${next.label} on ${ui.host}")
+    }
+
+    override fun fixThisPage() {
+        val host = ui.host
+        val tried = ui.fixTried[host].orEmpty()
+        val state = FixLadder.State(ui.desktop, ui.siteAdBlock, ui.gamePlayer, ui.controllerMode.name)
+        val step = FixLadder.next(tried, state)
+        if (step == null) {
+            // Everything was tried: put the site's options back as they were and start over.
+            fixOriginal.remove(host)?.let { orig -> settings.updateSite(host) { orig } }
+            ui.fixTried = ui.fixTried - host
+            sitePlayer -= host
+            applySiteSettings(host)
+            show(null)
+            toast("Fixes reset for $host · tap Fix it to start again")
+            webView?.reload()
+            return
+        }
+        val (n, total) = FixLadder.progress(tried, state)
+        if (step.persists) fixOriginal.getOrPut(host) { settings.site(host) }
+        ui.fixTried = ui.fixTried + (host to (tried + step))
+        show(null)
+        // The winning combination stays: every persisting step is written to this site's options.
+        when (step) {
+            FixLadder.Step.Reload -> webView?.reload()
+            FixLadder.Step.TogglePlayer -> toggleGamePlayer()
+            FixLadder.Step.ToggleView -> toggleDesktop()
+            FixLadder.Step.AdBlockOff -> toggleAdBlock()
+            FixLadder.Step.KeyboardKeys -> setController(ControllerMode.Keyboard)
+            FixLadder.Step.GamepadApi -> setController(ControllerMode.Native)
+            FixLadder.Step.BothControllers -> setController(ControllerMode.Both)
+            FixLadder.Step.Report -> openSettings()
+        }
+        toast(
+            if (step == FixLadder.Step.Report) "Last step ($n of $total): Settings ▸ Report a problem"
+            else "Fix $n of $total: ${step.label} · play again, tap Fix it if still broken"
+        )
+    }
+
+    private fun setController(mode: ControllerMode) {
+        settings.updateSite(ui.host) { it.copy(controllerMode = mode) }
+        applySiteSettings(ui.host)
+        releaseKeys()
+        webView?.reload()
     }
 
     override fun toggleControllerBrowse() {

@@ -19,6 +19,7 @@ import androidx.lifecycle.lifecycleScope
 import com.aiconsole.retrotv.data.FreezeWatchdog
 import com.aiconsole.retrotv.data.UrlInput
 import com.aiconsole.retrotv.web.AdBlock
+import com.aiconsole.retrotv.web.SiteHints
 import com.aiconsole.retrotv.web.Surrogates
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -78,6 +79,15 @@ internal fun BrowserActivity.browserClient(): WebViewClient = object : WebViewCl
             val headers = mapOf("Access-Control-Allow-Origin" to "*", "Cache-Control" to "no-store")
             return WebResourceResponse("application/javascript", "utf-8", 200, "OK", headers, ByteArrayInputStream(body))
         }
+        // Only hosts on the ad list get here (never the allow-list). A blocked sub-frame gets an
+        // empty page, counted so the quick menu can say so; anything else an empty body.
+        val isFrame = request.requestHeaders["Accept"]?.contains("text/html", ignoreCase = true) == true
+        if (isFrame) {
+            blockedFrames.incrementAndGet()
+            handler.removeCallbacks(updateBlocked)
+            handler.postDelayed(updateBlocked, 250)
+            return WebResourceResponse("text/html", "utf-8", ByteArrayInputStream(ByteArray(0)))
+        }
         return WebResourceResponse("text/plain", "utf-8", ByteArrayInputStream(ByteArray(0)))
     }
 
@@ -86,7 +96,9 @@ internal fun BrowserActivity.browserClient(): WebViewClient = object : WebViewCl
         ui.url = url
         ui.focusGame = false
         blocked.set(0)
+        blockedFrames.set(0)
         ui.blockedCount = 0
+        ui.blockedFrames = 0
         applySiteSettings(UrlInput.host(url).orEmpty())
         FreezeWatchdog.context = "Browser: ${UrlInput.host(url).orEmpty()}"
         updateNav()
@@ -104,6 +116,13 @@ internal fun BrowserActivity.browserClient(): WebViewClient = object : WebViewCl
         app.history.record(view.title, url)
         view.title?.takeIf { it.isNotBlank() }?.let { ui.title = it }
         updateNav()
+        // Sites that need a second click to start a game: say so once per site per visit.
+        val hostOfPage = UrlInput.host(url)
+        val hintKey = SiteHints.key(hostOfPage)
+        val pagePath = runCatching { Uri.parse(url).path.orEmpty() }.getOrDefault("")
+        if (hintKey != null && pagePath.length > 1 && hintedHosts.add(hintKey)) {
+            SiteHints.forHost(hostOfPage)?.let { toast(it) }
+        }
     }
 
     override fun doUpdateVisitedHistory(view: WebView, url: String, isReload: Boolean) {

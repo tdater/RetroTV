@@ -84,6 +84,9 @@ class BrowserUiState {
     var controllerMode by mutableStateOf(ControllerMode.Auto)
     var gamePlayer by mutableStateOf(true)
     var blockedCount by mutableIntStateOf(0)
+    var blockedFrames by mutableIntStateOf(0)
+    /** Fix-this-page steps already tried, by host (this visit). */
+    var fixTried by mutableStateOf<Map<String, Set<FixLadder.Step>>>(emptyMap())
     var blockedPopup by mutableStateOf<String?>(null)
     var focusGame by mutableStateOf(false)
     var toast by mutableStateOf<String?>(null)
@@ -111,6 +114,8 @@ interface BrowserActions {
     fun toggleInput()
     fun toggleAdBlock()
     fun cycleController()
+    /** Applies the next remedy for a game that won't play; when all are tried, resets them. */
+    fun fixThisPage()
     fun toggleGamePlayer()
     fun toggleControllerBrowse()
     fun installApp()
@@ -277,6 +282,14 @@ private fun MenuPanel(state: BrowserUiState, actions: BrowserActions) {
                     MenuTile(icon, label, action, m)
                 }
             }
+        }
+        val fixHint = FixLadder.hint(
+            state.fixTried[state.host].orEmpty(),
+            FixLadder.State(state.desktop, state.siteAdBlock, state.gamePlayer, state.controllerMode.name)
+        )
+        TvButton("Game not working? Fix it  ·  $fixHint", { actions.fixThisPage() }, Modifier.fillMaxWidth(), icon = "🩹")
+        if (state.blockedFrames > 0) {
+            Text("Blocked ${state.blockedFrames} ad frame${if (state.blockedFrames == 1) "" else "s"} on this page", color = TextDim, fontSize = 13.sp)
         }
         Text(
             "Hold OK or press Menu for this panel · Back closes it · Select + Start opens it from a controller",

@@ -27,7 +27,7 @@ object BuiltInSites {
         Site("retrogamesnexus", "Retro Games Nexus", "https://retrogamesnexus.com/", "Classic retro and emulator games online", 0xFF00838F, tags = listOf("Consoles")),
         Site("internetarcade", "Internet Arcade", "https://archive.org/details/internetarcade", "Internet Archive's playable arcade machines", 0xFF37474F, tags = listOf("Arcade", "Archive")),
         Site("oldgames", "OldGames.app", "https://oldgames.app/", "Classic retro games online", 0xFF8D6E63, tags = listOf("Consoles")),
-        Site("afterplay", "Afterplay.io", "https://afterplay.io/", "Retro games on any device", 0xFFC2185B, tags = listOf("Consoles")),
+        Site("afterplay", "Afterplay.io", "https://afterplay.io/", "Indie game store · demos need a guest login", 0xFFC2185B, tags = listOf("Store")),
         Site("rec0ded88", "Rec0deD:88", "https://rec0ded88.com/", "Retro games online, many systems", 0xFF283593, tags = listOf("Consoles", "Arcade")),
         Site("retrogames_onl", "RetroGames.onl", "https://www.retrogames.onl/", "Online retro console games", 0xFFEF6C00, tags = listOf("Consoles")),
         Site("playretrogames", "PlayRetroGames", "https://www.playretrogames.com/", "Sega, Nintendo and Game Boy classics online", 0xFF558B2F, tags = listOf("Consoles")),

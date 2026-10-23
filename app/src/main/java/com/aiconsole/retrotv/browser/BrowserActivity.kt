@@ -102,6 +102,13 @@ class BrowserActivity : ComponentActivity(), BrowserActions {
     /** Auto controller mode: buttons that were sent as keys (their release must be too). */
     internal val autoKeys = HashSet<Int>()
     internal val blocked = AtomicInteger()
+    internal val blockedFrames = AtomicInteger()
+
+    /** Sites whose "needs a second click" hint was already shown this visit. */
+    internal val hintedHosts = HashSet<String>()
+
+    /** Fix-this-page: the original per-site options, kept so the fixes can be reset. */
+    internal val fixOriginal = HashMap<String, SitePrefs>()
     internal val pendingBlobs = ConcurrentHashMap<String, String>()
 
     /** A long press opened the menu; swallow the rest of that key press. */
@@ -113,7 +120,10 @@ class BrowserActivity : ComponentActivity(), BrowserActions {
     internal var crashes = 0
     internal var lastCrash = 0L
 
-    internal val updateBlocked = Runnable { ui.blockedCount = blocked.get() }
+    internal val updateBlocked = Runnable {
+        ui.blockedCount = blocked.get()
+        ui.blockedFrames = blockedFrames.get()
+    }
     internal val longPress = Runnable {
         val pointerHold = ui.inputMode == InputMode.Cursor && cursor.isPressing && !cursor.isDragging
         if (pointerHold || dpadCenterDown) {
@@ -493,6 +503,7 @@ class BrowserActivity : ComponentActivity(), BrowserActions {
     override fun toggleAdBlock() = controls.toggleAdBlock()
     override fun toggleGamePlayer() = controls.toggleGamePlayer()
     override fun cycleController() = controls.cycleController()
+    override fun fixThisPage() = controls.fixThisPage()
     override fun toggleControllerBrowse() = controls.toggleControllerBrowse()
     override fun installApp() = controls.installApp()
     override fun addToHome() = controls.addToHome()

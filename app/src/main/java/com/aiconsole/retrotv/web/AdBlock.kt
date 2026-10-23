@@ -33,6 +33,8 @@ object AdBlock {
         "effectiveratecpm.com", "displaycontentnetwork.com", "realsrv.com", "pemsrv.com", "mnaspm.com",
         "notifpush.com", "pushnami.com", "pushwoosh.com", "pushengage.com", "izooto.com", "aclib.net",
         "acscdn.com", "grop.net", "wingsmob.com", "intergient.com", "cpmstar.com",
+        // Fake "phone storage full" overlays and pop-unders
+        "sowve.com", "totaldrive.com",
         // Trackers and analytics
         "google-analytics.com", "googletagmanager.com", "scorecardresearch.com", "quantserve.com",
         "quantcount.com", "hotjar.com", "mixpanel.com", "segment.io", "branch.io", "chartbeat.com",
@@ -47,7 +49,9 @@ object AdBlock {
     private val ALLOW = setOf(
         "archive.org", "us.archive.org", "emulatorjs.org", "emulatorjs.com", "cdn.emulatorjs.org",
         "js-dos.com", "dos.zone", "jsdelivr.net", "unpkg.com", "cdnjs.cloudflare.com", "gstatic.com",
-        "googleapis.com", "github.io", "githubusercontent.com", "webrcade.com", "greasyfork.org"
+        "googleapis.com", "github.io", "githubusercontent.com", "webrcade.com", "greasyfork.org",
+        // ROM and asset hosts of the supported game sites (checked before the block list)
+        "filesus3.retrogames.cc", "roms.emulatorgamer.com", "r2.oldgames.app", "mem.neptunjs.com"
     )
 
     @Volatile
