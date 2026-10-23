@@ -308,7 +308,8 @@ class GameFiles(context: Context) {
             }
             if (code !in 200..299) {
                 conn.disconnect()
-                if (validateRom) problem = "The site refused the download (HTTP $code). Open the game on the site again, then press Play."
+                // Only the game file itself is a "problem"; a missing optional file (bios, patch, state) isn't.
+                if (validateRom && strict) problem = "The site refused the download (HTTP $code). Open the game on the site again, then press Play."
                 return status(if (code in 400..599) code else 502, "Upstream error", extra)
             }
             val length = conn.contentLengthLong
@@ -335,7 +336,7 @@ class GameFiles(context: Context) {
                 }
                 val bad = RomRules.check(conn.contentType, length, buf.copyOf(n), strict)
                 if (bad != null) {
-                    problem = bad.message
+                    if (strict) problem = bad.message
                     conn.disconnect()
                     target.delete()
                     return status(502, "Not a game file", extra)

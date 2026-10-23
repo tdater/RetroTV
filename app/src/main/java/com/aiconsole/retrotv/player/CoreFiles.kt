@@ -22,6 +22,10 @@ object CoreFiles {
         return COMMON + "cores/reports/$name.json" + builds.map { "cores/$it-wasm.data" }
     }
 
+    /** True when [core] also has a build without threads (none do today: threaded cores only ship `-thread` builds). */
+    fun hasNonThreadBuild(core: String): Boolean =
+        Systems.needsThreads(core) && forCore(core).any { it.endsWith("-wasm.data") && !it.contains("-thread") }
+
     /** Files that may not exist for every core; a missing one doesn't make the console unplayable. */
     fun optional(path: String): Boolean = path.contains("-legacy-")
 }

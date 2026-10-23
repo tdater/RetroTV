@@ -46,10 +46,11 @@
   window.EJS_onGameStart = function () { window.__retrotvStarted = true; tell('started'); setTimeout(function () { window.RetroPlayer.migrate(); }, 1500); };
 
   // EmulatorJS shows errors in its own text box; pass them on so the app can offer a fallback.
-  // It depends on EmulatorJS internals (failedToStart, textElem), so a 45 s watchdog backs it up:
-  // no start and no change in the emulator's status text (download percentages count) is a failure.
+  // It depends on EmulatorJS internals (failedToStart, textElem), so a 90 s watchdog backs it up:
+  // no start, an unchanged status text (download percentages count) and no frames drawn is a failure.
+  // A ROM can unpack for a long time with the same text, hence the long limit.
   tell('isolated', self.crossOriginIsolated === true);
-  var STALL_MS = 45000;
+  var STALL_MS = 90000;
   var began = Date.now(), lastText = '', lastChange = began, begun = false;
   function fail(msg) {
     if (begun) return;
@@ -66,14 +67,16 @@
     }
     var text = '';
     try { text = (e.textElem && e.textElem.innerText) || ''; } catch (x) {}
-    if (text !== lastText) { lastText = text; lastChange = now; }
+    // Progress = new status text, or the core's game manager appearing (the ROM is loaded and running).
+    var sig = text + '|' + (e.gameManager ? 1 : 0);
+    if (sig !== lastText) { lastText = sig; lastChange = now; }
     if (e.failedToStart) {
       fail(text);
     } else if (e.started || window.__retrotvStarted) {
       begun = true;
       clearInterval(watch);
     } else if (now - lastChange > STALL_MS) {
-      fail('The game did not start within 45 seconds' + (text ? ' (' + text + ')' : '') + '.');
+      fail('The game did not start within 90 seconds' + (text ? ' (' + text + ')' : '') + '.');
     }
   }, 400);
 

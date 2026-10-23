@@ -138,4 +138,10 @@ class PlayerRobustnessTest {
         assertEquals(RetryStep.NoThreads, RetryPlan.next(2, threaded = true, crossOriginIsolated = false, hasNonThreadBuild = true))
         assertEquals(RetryStep.Site, RetryPlan.next(3, threaded = true, crossOriginIsolated = false, hasNonThreadBuild = true))
     }
+
+    @Test
+    fun noCoreCurrentlyShipsANonThreadBuildOfAThreadedCore() {
+        assertFalse(com.aiconsole.retrotv.player.CoreFiles.hasNonThreadBuild("psp"))
+        assertFalse(com.aiconsole.retrotv.player.CoreFiles.hasNonThreadBuild("nes"))
+    }
 }

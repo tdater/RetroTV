@@ -87,6 +87,8 @@ class BrowserUiState {
     var blockedFrames by mutableIntStateOf(0)
     /** Fix-this-page steps already tried, by host (this visit). */
     var fixTried by mutableStateOf<Map<String, Set<FixLadder.Step>>>(emptyMap())
+    /** Each site's state before its first fix: the ladder judges its steps against this. */
+    var fixBase by mutableStateOf<Map<String, FixLadder.State>>(emptyMap())
     var blockedPopup by mutableStateOf<String?>(null)
     var focusGame by mutableStateOf(false)
     var toast by mutableStateOf<String?>(null)
@@ -285,7 +287,7 @@ private fun MenuPanel(state: BrowserUiState, actions: BrowserActions) {
         }
         val fixHint = FixLadder.hint(
             state.fixTried[state.host].orEmpty(),
-            FixLadder.State(state.desktop, state.siteAdBlock, state.gamePlayer, state.controllerMode.name)
+            state.fixBase[state.host] ?: FixLadder.State(state.desktop, state.siteAdBlock, state.gamePlayer, state.controllerMode.name)
         )
         TvButton("Game not working? Fix it  ·  $fixHint", { actions.fixThisPage() }, Modifier.fillMaxWidth(), icon = "🩹")
         if (state.blockedFrames > 0) {

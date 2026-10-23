@@ -24,15 +24,16 @@
   var takenAt = 0;
 
   function hasLoader() {
-    if (loaderSeen) return true;
+    if (loaderSeen && loaderSrc) return true;
+    // Keep scanning until the START script (loader.js) is known, even if emulator.min.js came first.
     var s = document.getElementsByTagName('script');
     for (var i = 0; i < s.length; i++) {
       if (LOADER.test(s[i].src || '')) {
+        loaderSeen = true;
         if (START.test(s[i].src)) loaderSrc = s[i].src;
-        return (loaderSeen = true);
       }
     }
-    return false;
+    return loaderSeen;
   }
 
   function stop() {
@@ -131,9 +132,12 @@
       var ok = B.launch(JSON.stringify(info));
       if (ok === false) { restore(); return; }
       // The app may fail to open the player a moment later: then the site's own emulator takes over.
-      setTimeout(function () {
-        try { if (B.launchFailed && B.launchFailed()) restore(); } catch (x) {}
-      }, 1500);
+      // Polled for ~6 s so a busy main thread can't miss a single check.
+      var polls = 0;
+      var poll = setInterval(function () {
+        if (!taken || restored || ++polls > 12) { clearInterval(poll); return; }
+        try { if (B.launchFailed && B.launchFailed()) { clearInterval(poll); restore(); } } catch (x) {}
+      }, 500);
     }).catch(function (e) {
       try { B.failed(String(e && e.message || e)); } catch (x) {}
       restore();
@@ -172,7 +176,7 @@
             loaderSeen = true;
             if (START.test(n.src)) loaderSrc = n.src;
             // Play pressed again on a single-page site (back from the player): a new attempt.
-            if (taken && START.test(n.src) && Date.now() - takenAt > 3000) taken = false;
+            if (taken && START.test(n.src) && Date.now() - takenAt > 3000) { taken = false; restored = false; }
             trigger('loader');
           }
         }

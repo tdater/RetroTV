@@ -155,12 +155,15 @@ internal fun BrowserActivity.browserControls(): BrowserActions = object : Browse
     override fun fixThisPage() {
         val host = ui.host
         val tried = ui.fixTried[host].orEmpty()
-        val state = FixLadder.State(ui.desktop, ui.siteAdBlock, ui.gamePlayer, ui.controllerMode.name)
+        // Steps are judged against the state before the first fix, so the count stays stable and
+        // a step never "changes" a setting back to what it was.
+        val state = ui.fixBase[host] ?: FixLadder.State(ui.desktop, ui.siteAdBlock, ui.gamePlayer, ui.controllerMode.name)
         val step = FixLadder.next(tried, state)
         if (step == null) {
             // Everything was tried: put the site's options back as they were and start over.
             fixOriginal.remove(host)?.let { orig -> settings.updateSite(host) { orig } }
             ui.fixTried = ui.fixTried - host
+            ui.fixBase = ui.fixBase - host
             sitePlayer -= host
             applySiteSettings(host)
             show(null)
@@ -170,6 +173,7 @@ internal fun BrowserActivity.browserControls(): BrowserActions = object : Browse
         }
         val (n, total) = FixLadder.progress(tried, state)
         if (step.persists) fixOriginal.getOrPut(host) { settings.site(host) }
+        ui.fixBase = ui.fixBase + (host to state)
         ui.fixTried = ui.fixTried + (host to (tried + step))
         show(null)
         // The winning combination stays: every persisting step is written to this site's options.

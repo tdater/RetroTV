@@ -18,21 +18,14 @@ class FixThisPageTest {
     fun laddersRunInOrderFromTheStartingState() {
         val tried = mutableSetOf<Step>()
         val order = mutableListOf<Step>()
-        var state = start
+        // The browser judges every step against the state saved before the first fix, so the
+        // steps' own effects must not change what is offered next.
+        val state = start
         while (true) {
             val step = FixLadder.next(tried, state) ?: break
             order += step
             tried += step
-            // Apply the step's effect to the state like the browser does.
-            state = when (step) {
-                Step.TogglePlayer -> state.copy(builtInPlayer = !state.builtInPlayer)
-                Step.ToggleView -> state.copy(desktop = !state.desktop)
-                Step.AdBlockOff -> state.copy(adBlockOn = false)
-                Step.KeyboardKeys -> state.copy(controller = FixLadder.KEYBOARD)
-                Step.GamepadApi -> state.copy(controller = FixLadder.NATIVE)
-                Step.BothControllers -> state.copy(controller = FixLadder.BOTH)
-                else -> state
-            }
+            assertEquals(8, FixLadder.progress(tried - step, state).second)
         }
         assertEquals(
             listOf(
@@ -42,6 +35,23 @@ class FixThisPageTest {
             order
         )
         assertNull(FixLadder.next(tried, state))
+    }
+
+    @Test
+    fun stepCountStaysStableAndNeverRestoresTheOriginalController() {
+        val base = start.copy(controller = FixLadder.KEYBOARD)
+        val tried = mutableSetOf<Step>()
+        val order = mutableListOf<Step>()
+        val totals = mutableSetOf<Int>()
+        while (true) {
+            totals += FixLadder.progress(tried, base).second
+            val step = FixLadder.next(tried, base) ?: break
+            order += step
+            tried += step
+        }
+        assertEquals(setOf(7), totals)
+        assertFalse(Step.KeyboardKeys in order)
+        assertEquals(listOf(Step.GamepadApi, Step.BothControllers, Step.Report), order.takeLast(3))
     }
 
     @Test

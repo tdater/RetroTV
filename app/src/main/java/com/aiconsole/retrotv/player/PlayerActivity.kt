@@ -574,7 +574,8 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         }
         val threaded = Systems.needsThreads(request.core) && !noThreads
         val iso = isolated ?: true
-        when (RetryPlan.next(attempt + 1, threaded, iso)) {
+        // Derived from the file list: false today, so the "without threads" step only runs once a core ships such a build.
+        when (RetryPlan.next(attempt + 1, threaded, iso, CoreFiles.hasNonThreadBuild(request.core))) {
             RetryStep.Legacy -> {
                 // Older TV GPUs often fail the WebGL 2 cores: try the compatible ones.
                 attempt++
