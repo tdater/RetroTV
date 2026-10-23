@@ -166,6 +166,14 @@ fun SettingsScreen(onBack: () -> Unit, onNavigate: (Screen) -> Unit) {
                         subtitle = "Crisp, blocky pixels instead of a smoothed picture when games are scaled up")
                 }
                 item {
+                    ToggleRow("Smooth mode", prefs.smoothMode, { v -> set { it.copy(smoothMode = v) } },
+                        subtitle = "For slow TV boxes if games stutter: turns off display filters, rewind and the speed readout. Starts on by default on low-end devices. Applies to the next game started.")
+                }
+                item {
+                    ToggleRow("Compatibility graphics", prefs.compatGraphics, { v -> set { it.copy(compatGraphics = v) } },
+                        subtitle = "Older (WebGL 1) emulator builds. Try it if games stutter or show glitches on an older GPU. Applies to the next game started.")
+                }
+                item {
                     ToggleRow("Rewind", prefs.rewind, { v -> set { it.copy(rewind = v) } },
                         subtitle = "Hold Select + L2 (or the remote's Rewind key) to wind the game back. Uses more memory; leave off on slow TVs. Applies to the next game started.")
                 }

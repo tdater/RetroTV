@@ -49,7 +49,13 @@
   if (q.get('legacy') === '1') window.EJS_forceLegacyCores = true;
   window.EJS_threads = q.get('threads') === '1' && typeof SharedArrayBuffer === 'function' && self.crossOriginIsolated === true;
   window.EJS_ready = function () { tell('ready'); };
-  window.EJS_onGameStart = function () { window.__retrotvStarted = true; tell('started'); setTimeout(function () { window.RetroPlayer.migrate(); }, 1500); };
+  if (q.get('vsync')) window.EJS_defaultOptions.vsync = q.get('vsync'); // 'enabled' | 'disabled' (frame sync)
+  window.EJS_onGameStart = function () {
+    window.__retrotvStarted = true;
+    tell('started');
+    startPerf();
+    setTimeout(function () { window.RetroPlayer.migrate(); }, 1500);
+  };
 
   // EmulatorJS shows errors in its own text box; pass them on so the app can offer a fallback.
   // It depends on EmulatorJS internals (failedToStart, textElem), so a 90 s watchdog backs it up:
@@ -206,6 +212,27 @@
 
   // ---- Speed info: screen refreshes and emulated frames per second (a game should show ~60) ----
 
+  // Once a second the app hears the emulated and screen frame rates (it decides about stutter, see StutterRules,
+  // and keeps a line for "Report a problem"). Cheap: one counter per animation frame and one bridge call a second.
+  var perfTimer = 0;
+  function startPerf() {
+    if (perfTimer || typeof P.perf !== 'function') return;
+    var frames = 0, last = performance.now(), lastFrame = null;
+    (function count() { frames++; requestAnimationFrame(count); })();
+    perfTimer = setInterval(function () {
+      var now = performance.now(), dt = (now - last) / 1000, e = window.EJS_emulator, emu = -1;
+      try {
+        var n = e.gameManager.getFrameNum();
+        if (lastFrame !== null && dt > 0) emu = (n - lastFrame) / dt;
+        lastFrame = n;
+      } catch (x) { lastFrame = null; }
+      var gl = e && e.supportsWebgl2 && e.webgl2Enabled ? 2 : 1;
+      tell('perf', emu, dt > 0 ? frames / dt : 0, gl);
+      frames = 0;
+      last = now;
+    }, 1000);
+  }
+
   var statsEl = null, statsTimer = 0;
   function stats(on, info) {
     clearInterval(statsTimer);
@@ -274,6 +301,8 @@
       } catch (x) {}
     },
     filter: function (name) { try { emu().changeSettingOption('shader', name); } catch (x) {} },
+    // Frame sync on/off ('enabled' | 'disabled'), applied live.
+    vsync: function (v) { try { emu().changeSettingOption('vsync', v); } catch (x) {} },
     rewind: function (on) {
       try { var e = emu(); if (e.rewindEnabled) e.gameManager.functions.toggleRewind(on ? 1 : 0); } catch (x) {}
     },

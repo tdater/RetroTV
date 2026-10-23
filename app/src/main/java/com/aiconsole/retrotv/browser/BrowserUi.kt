@@ -1,5 +1,6 @@
 package com.aiconsole.retrotv.browser
 
+import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -41,7 +42,10 @@ import com.aiconsole.retrotv.data.Site
 import com.aiconsole.retrotv.data.SitePrefs
 import com.aiconsole.retrotv.data.ViewMode
 import com.aiconsole.retrotv.downloads.DownloadItem
+import com.aiconsole.retrotv.downloads.OpenAction
+import com.aiconsole.retrotv.downloads.OpenPolicy
 import com.aiconsole.retrotv.downloads.SavedFile
+import com.aiconsole.retrotv.ui.SystemPicker
 import com.aiconsole.retrotv.ui.ChoiceRow
 import com.aiconsole.retrotv.ui.Ink
 import com.aiconsole.retrotv.ui.OverlayPanel
@@ -64,6 +68,10 @@ sealed interface Panel {
     data class InstallScript(val url: String, val script: Userscript?, val error: String?) : Panel
     data class ApkReady(val item: DownloadItem) : Panel
     data class Saved(val file: SavedFile) : Panel
+    /** A finished download that is a game file: offers RetroTV's player. */
+    data class RomReady(val item: DownloadItem) : Panel
+    /** The console for an imported file whose type doesn't say. */
+    data class PickSystem(val value: String, val name: String) : Panel
 }
 
 /** Everything the overlay shows, written by [BrowserActivity] on the main thread. */
@@ -132,6 +140,10 @@ interface BrowserActions {
     fun installScript(script: Userscript, url: String)
     fun installApk(item: DownloadItem)
     fun openSaved(file: SavedFile)
+    /** Plays a finished download or saved file in RetroTV's player (asks for the console when needed). */
+    fun playDownload(item: DownloadItem)
+    fun playRom(uri: Uri, name: String)
+    fun startRom(value: String, name: String, core: String)
     fun updateSite(change: (SitePrefs) -> SitePrefs)
 }
 
@@ -181,12 +193,24 @@ fun BrowserOverlay(state: BrowserUiState, actions: BrowserActions, history: List
                 "Install now" to { actions.installApk(p.item) },
                 actions
             )
-            is Panel.Saved -> ConfirmPanel(
+            is Panel.Saved -> if (OpenPolicy.decide(p.file.name, p.file.mimeType) == OpenAction.PlayInRetroTV) ConfirmPanel(
+                "Saved",
+                "${p.file.name} was saved to Downloads/RetroTV.",
+                "Play in RetroTV" to { actions.playRom(p.file.uri, p.file.name) },
+                actions
+            ) else ConfirmPanel(
                 "Saved",
                 "${p.file.name} was saved to Downloads/RetroTV.",
                 "Open" to { actions.openSaved(p.file) },
                 actions
             )
+            is Panel.RomReady -> ConfirmPanel(
+                "Download finished",
+                "${p.item.title} is ready to play.",
+                "Play in RetroTV" to { actions.playDownload(p.item) },
+                actions
+            )
+            is Panel.PickSystem -> SystemPicker(p.name, onPick = { core -> actions.show(null); actions.startRom(p.value, p.name, core) }, onDismiss = { actions.show(null) })
         }
     }
 }

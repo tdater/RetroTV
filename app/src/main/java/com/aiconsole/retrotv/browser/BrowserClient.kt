@@ -17,6 +17,7 @@ import android.widget.FrameLayout
 import androidx.core.graphics.createBitmap
 import androidx.lifecycle.lifecycleScope
 import com.aiconsole.retrotv.data.FreezeWatchdog
+import com.aiconsole.retrotv.data.ProblemReport
 import com.aiconsole.retrotv.data.UrlInput
 import com.aiconsole.retrotv.web.AdBlock
 import com.aiconsole.retrotv.web.SiteHints
@@ -202,6 +203,11 @@ internal fun BrowserActivity.browserChrome(): WebChromeClient = object : WebChro
 }
 
 internal fun BrowserActivity.handlePopup(url: String) {
+    val scheme = url.substringBefore(':', "").lowercase()
+    if (scheme != "http" && scheme != "https" && scheme != "about") {
+        handleExternalScheme(url)
+        return
+    }
     if (adBlockActive && AdBlock.isBlocked(UrlInput.host(url))) {
         countBlocked()
         toast("Blocked a pop-up ad")
@@ -239,7 +245,10 @@ internal fun BrowserActivity.handleExternalScheme(url: String) {
             return
         }
     }
-    toast("Blocked a link that tried to open another app")
+    // Never start another app (RetroArch, a store...) from web content; keep the scheme so a report shows what the site tried.
+    val scheme = url.substringBefore(':', "").lowercase().take(40).ifBlank { "another app" }
+    toast("Blocked a link that tried to open $scheme")
+    ProblemReport.note(this, "blocked scheme $scheme from ${UrlInput.host(webView?.url).orEmpty()}")
 }
 
 internal fun BrowserActivity.isUserscriptUrl(url: String) = url.substringBefore('?').substringBefore('#').endsWith(".user.js", true)

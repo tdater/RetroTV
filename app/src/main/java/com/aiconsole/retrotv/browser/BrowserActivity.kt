@@ -43,7 +43,10 @@ import com.aiconsole.retrotv.data.ControllerMode
 import com.aiconsole.retrotv.data.SitePrefs
 import com.aiconsole.retrotv.data.UrlInput
 import com.aiconsole.retrotv.data.WindowMode
+import android.net.Uri
 import com.aiconsole.retrotv.downloads.DownloadItem
+import com.aiconsole.retrotv.downloads.OpenAction
+import com.aiconsole.retrotv.downloads.OpenPolicy
 import com.aiconsole.retrotv.downloads.SavedFile
 import com.aiconsole.retrotv.link.PhonePads
 import com.aiconsole.retrotv.player.PlayerActivity
@@ -235,6 +238,7 @@ class BrowserActivity : ComponentActivity(), BrowserActions {
                     app.downloads.completed.collect { item ->
                         when {
                             item.done && item.isApk -> show(Panel.ApkReady(item))
+                            item.done && OpenPolicy.decide(item.title, item.mimeType) == OpenAction.PlayInRetroTV -> show(Panel.RomReady(item))
                             item.done -> toast("Downloaded ${item.title} · Menu ▸ Downloads to open it")
                             item.failed -> toast("Download failed: ${item.title}")
                         }
@@ -520,6 +524,9 @@ class BrowserActivity : ComponentActivity(), BrowserActions {
     override fun installScript(script: Userscript, url: String) = controls.installScript(script, url)
     override fun installApk(item: DownloadItem) = controls.installApk(item)
     override fun openSaved(file: SavedFile) = controls.openSaved(file)
+    override fun playDownload(item: DownloadItem) = controls.playDownload(item)
+    override fun playRom(uri: Uri, name: String) = controls.playRom(uri, name)
+    override fun startRom(value: String, name: String, core: String) = controls.startRom(value, name, core)
     override fun updateSite(change: (SitePrefs) -> SitePrefs) = controls.updateSite(change)
 
     // ---- Lifecycle ----

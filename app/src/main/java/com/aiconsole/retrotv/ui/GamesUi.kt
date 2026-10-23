@@ -37,9 +37,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.aiconsole.retrotv.RetroApp
 import com.aiconsole.retrotv.data.UrlInput
-import com.aiconsole.retrotv.player.GameRequest
 import com.aiconsole.retrotv.player.PlayerActivity
 import com.aiconsole.retrotv.player.RecentGame
+import com.aiconsole.retrotv.player.RomLauncher
 import com.aiconsole.retrotv.player.Systems
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -83,20 +83,16 @@ class RomPicker(val open: () -> Unit, val play: (Uri, String) -> Unit, val Dialo
 @Composable
 fun rememberRomPicker(onMessage: (String) -> Unit): RomPicker {
     val context = LocalContext.current
-    val app = RetroApp.from(context)
     val scope = rememberCoroutineScope()
     var pending by remember { mutableStateOf<Pair<String, String>?>(null) } // file value, name
 
-    fun start(value: String, name: String, core: String) {
-        val request = GameRequest(core = core, game = value, gameName = name.substringBeforeLast('.'), title = name.substringBeforeLast('.'))
-        context.startActivity(PlayerActivity.intent(context, request))
-    }
+    fun start(value: String, name: String, core: String) = RomLauncher.start(context, value, name, core)
 
     fun play(uri: Uri, name: String) {
         onMessage("Loading $name…")
         scope.launch {
             try {
-                val value = withContext(Dispatchers.IO) { app.games.importRom(uri, name) }
+                val value = withContext(Dispatchers.IO) { RomLauncher.import(context, uri, name) }
                 onMessage("")
                 val system = Systems.forFile(name)
                 if (system != null) start(value, name, system.id) else pending = value to name

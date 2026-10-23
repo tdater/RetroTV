@@ -46,6 +46,7 @@ import com.aiconsole.retrotv.browser.VirtualPads
 import com.aiconsole.retrotv.browser.WebConsole
 import com.aiconsole.retrotv.data.ACCENTS
 import com.aiconsole.retrotv.data.FreezeWatchdog
+import com.aiconsole.retrotv.data.ProblemReport
 import com.aiconsole.retrotv.link.PhonePads
 import com.aiconsole.retrotv.ui.RetroTheme
 import com.aiconsole.retrotv.web.UserAgents
@@ -220,9 +221,19 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
             "data" to GameFiles.EJS_DATA
         )
         files.forEach { (k, v) -> query[k] = v }
+        val prefs = app.settings.value
+        ui.smooth = prefs.smoothMode
+        ui.compat = prefs.compatGraphics
+        if (ui.compat && !legacy) {
+            // Compatibility graphics: the WebGL 1 cores up front, so the retry ladder skips that step.
+            legacy = true
+            attempt = maxOf(attempt, 2)
+        }
+        ui.vsync = gamePrefs.getBoolean(VSYNC_PREFIX + request.key, true)
+        if (!ui.vsync) query["vsync"] = "disabled"
         if (legacy) query["legacy"] = "1"
-        if (app.settings.value.rewind) query["rewind"] = "1"
-        ui.filter = gamePrefs.getString("filter_" + request.key, null) ?: app.settings.value.filter
+        if (rewindAllowed()) query["rewind"] = "1"
+        ui.filter = effectiveFilter()
         ui.cheats = CheatRules.decode(gamePrefs.getString("cheats_" + request.key, "").orEmpty())
         controlsProfile = ControlProfiles.resolve(
             gamePrefs.getString(ControlProfiles.gameKey(request.key), null),
@@ -237,7 +248,75 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         val qs = query.entries.joinToString("&") { (k, v) -> k + "=" + URLEncoder.encode(v, "UTF-8") }
         ui.started = false
         ui.fetch = null
+        resetPerf()
+        updateContext()
         webView?.loadUrl("${GameFiles.ORIGIN}/player/index.html?$qs")
+    }
+
+    /** Smooth mode keeps filters off; otherwise the game's own filter, else the default. */
+    private fun effectiveFilter(): String =
+        if (ui.smooth) "disabled" else gamePrefs.getString("filter_" + request.key, null) ?: app.settings.value.filter
+
+    /** Rewind needs the setting and no Smooth mode (it costs memory and CPU). */
+    private fun rewindAllowed(): Boolean = app.settings.value.rewind && !ui.smooth
+
+    // ---- Performance watch: StutterRules decides, a line per session goes to "Report a problem" ----
+
+    private val fpsSamples = ArrayList<Double>()
+    private var settleUntil = 0L
+    private var emuSum = 0.0
+    private var screenSum = 0.0
+    private var perfCount = 0
+    private var glVersion = 0
+
+    private fun resetPerf() {
+        fpsSamples.clear()
+        settleUntil = SystemClock.elapsedRealtime() + SETTLE_MS
+    }
+
+    private fun updateContext() {
+        val avg = if (perfCount > 0) " ~%.0f fps".format(Locale.US, emuSum / perfCount) else ""
+        FreezeWatchdog.context = "Player: ${request.core} ${request.displayTitle} (smooth ${if (ui.smooth) "on" else "off"}, " +
+            "WebGL ${if (glVersion > 0) glVersion else "?"}$avg)"
+    }
+
+    /** One second of rates from the page. Only time spent playing counts (not menus, fast-forward or rewind). */
+    private fun onPerf(emu: Double, screen: Double, gl: Int) {
+        if (gl > 0) glVersion = gl
+        val now = SystemClock.elapsedRealtime()
+        val playing = ui.started && ui.panel == null && !ui.fast && !rewinding && !ui.pointer && emu >= 0
+        if (!playing) {
+            fpsSamples.clear()
+            settleUntil = now + SETTLE_MS
+            return
+        }
+        if (now < settleUntil) return
+        emuSum += emu
+        screenSum += screen
+        perfCount++
+        fpsSamples += emu
+        if (fpsSamples.size > StutterRules.WINDOW) fpsSamples.removeAt(0)
+        if (perfCount % 10 == 1) updateContext()
+        val asked = gamePrefs.getBoolean(CHOPPY_PREFIX + request.key, false)
+        if (!ui.smooth && !asked && StutterRules.shouldPrompt(fpsSamples, StutterRules.targetFps(ui.systemId))) {
+            gamePrefs.edit { putBoolean(CHOPPY_PREFIX + request.key, true) }
+            show(PlayerPanel.Choppy)
+        }
+    }
+
+    /** Writes this session's average rates as one line for "Report a problem". */
+    private fun flushPerf() {
+        if (perfCount == 0) return
+        val target = StutterRules.targetFps(ui.systemId)?.let { "%.0f".format(Locale.US, it) } ?: "?"
+        ProblemReport.note(
+            this,
+            "perf ${request.core} \"${request.displayTitle}\": emulated %.1f fps (target %s), screen %.1f fps, smooth=%s, WebGL %s, legacyCores=%s, frameSync=%s, %d s".format(
+                Locale.US, emuSum / perfCount, target, screenSum / perfCount, ui.smooth, if (glVersion > 0) glVersion else "?", legacy, ui.vsync, perfCount
+            )
+        )
+        emuSum = 0.0
+        screenSum = 0.0
+        perfCount = 0
     }
 
     private fun js(code: String) = webView?.evaluateJavascript("window.RetroPlayer && RetroPlayer.$code", null)
@@ -317,6 +396,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
                         PlayerPanel.Players -> { pads.claim(null); refreshPlayers(); show(PlayerPanel.Menu) }
                         PlayerPanel.Coop -> finishCoop()
                         PlayerPanel.Cheats -> show(PlayerPanel.Menu)
+                        PlayerPanel.Choppy -> answerChoppy(false)
                         else -> resume()
                     }
                 }
@@ -358,7 +438,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
             if (!down && !event.isCanceled) show(PlayerPanel.Menu)
             return true
         }
-        if (code == KeyEvent.KEYCODE_MEDIA_REWIND && app.settings.value.rewind) {
+        if (code == KeyEvent.KEYCODE_MEDIA_REWIND && rewindAllowed()) {
             Hotkeys.action(false, code, down)?.let { hotkey(it) }
             return true
         }
@@ -373,8 +453,8 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
             HotkeyAction.QuickSave -> js("save(${ui.slot})")
             HotkeyAction.QuickLoad -> js("load(${ui.slot})")
             HotkeyAction.RewindOn -> {
-                if (!app.settings.value.rewind) {
-                    toast("Turn on Rewind in Settings > Games first")
+                if (!rewindAllowed()) {
+                    toast(if (ui.smooth) "Rewind is off in Smooth mode" else "Turn on Rewind in Settings > Games first")
                     return true
                 }
                 rewinding = true
@@ -470,9 +550,44 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         ui.stats = !ui.stats
         val webViewVersion = runCatching { WebViewCompat.getCurrentWebViewPackage(this)?.versionName?.substringBefore('.') }.getOrNull() ?: "?"
         val metrics = resources.displayMetrics
-        val info = "display %.0f Hz %d×%d · WebView %s".format(Locale.US, displayHz, metrics.widthPixels, metrics.heightPixels, webViewVersion)
+        val info = "display %.0f Hz %d×%d · WebView %s · smooth %s · frame sync %s".format(
+            Locale.US, displayHz, metrics.widthPixels, metrics.heightPixels, webViewVersion,
+            if (ui.smooth) "on" else "off", if (ui.vsync) "on" else "off"
+        )
         js("stats(${ui.stats}, ${JSONObject.quote(info)})")
         if (ui.stats) show(null)
+    }
+
+    /** Smooth mode on or off (a device setting): filters and rewind off, the speed readout closed. */
+    private fun applySmooth(on: Boolean) {
+        app.settings.update { it.copy(smoothMode = on) }
+        ui.smooth = on
+        if (on && ui.stats) toggleStats()
+        ui.filter = effectiveFilter()
+        js("filter('${ui.filter}')")
+        updateContext()
+        toast(if (on) "Smooth mode on · filters off now, rewind off from the next start" else "Smooth mode off")
+    }
+
+    override fun toggleSmooth() = applySmooth(!ui.smooth)
+
+    override fun answerChoppy(turnOn: Boolean) {
+        if (turnOn) applySmooth(true)
+        show(null)
+    }
+
+    /** Frame sync (EmulatorJS's vsync option) on or off for this game, applied live so the two can be compared. */
+    override fun toggleVsync() {
+        ui.vsync = !ui.vsync
+        gamePrefs.edit { putBoolean(VSYNC_PREFIX + request.key, ui.vsync) }
+        js("vsync('${if (ui.vsync) "enabled" else "disabled"}')")
+        toast(if (ui.vsync) "Frame sync on" else "Frame sync off")
+    }
+
+    override fun toggleCompat() {
+        ui.compat = !ui.compat
+        app.settings.update { it.copy(compatGraphics = ui.compat) }
+        toast(if (ui.compat) "Compatibility graphics on · from the next start" else "Compatibility graphics off · from the next start")
     }
 
     override fun toggleMute() {
@@ -482,6 +597,10 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
 
     /** Next display filter for this game, applied live and remembered for it. */
     override fun cycleFilter() {
+        if (ui.smooth) {
+            toast("Smooth mode keeps filters off · turn it off in this menu to use one")
+            return
+        }
         ui.filter = Filters.next(ui.filter)
         gamePrefs.edit { putString("filter_" + request.key, ui.filter) }
         js("filter('${ui.filter}')")
@@ -717,6 +836,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         fun started() = handler.post {
             val first = !ui.started
             ui.started = true
+            if (first) resetPerf()
             if (first) autoResumeNow()
             if (ui.cheats.isNotEmpty()) applyCheats()
             ui.fetch = null
@@ -737,6 +857,10 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
 
         @JavascriptInterface
         fun isolated(ok: Boolean) = handler.post { isolated = ok }
+
+        /** Once a second: emulated fps (-1 unknown), screen fps, WebGL version. */
+        @JavascriptInterface
+        fun perf(emuFps: Double, screenFps: Double, gl: Int) = handler.post { onPerf(emuFps, screenFps, gl) }
 
         @JavascriptInterface
         fun failed(message: String) = handler.post { onStartFailed(message) }
@@ -843,6 +967,7 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
         resumedAt = 0
         pads.releaseAll()
         js("flush()")
+        flushPerf()
         if (ui.started && ui.panel == null) show(PlayerPanel.Menu)
         (getSystemService(Context.INPUT_SERVICE) as InputManager).unregisterInputDeviceListener(inputListener)
         webView?.onPause()
@@ -863,6 +988,10 @@ class PlayerActivity : ComponentActivity(), PlayerActions {
     companion object {
         const val RESULT_PLAY_ON_SITE = 2
         private const val HINT_SHOWN = "controls_hint_shown"
+        private const val VSYNC_PREFIX = "vsync_"
+        private const val CHOPPY_PREFIX = "choppy_asked_"
+        /** After the start, a menu or fast-forward: samples are ignored while things settle. */
+        private const val SETTLE_MS = 5_000L
 
         fun intent(context: Context, request: GameRequest): Intent =
             request.toIntent(Intent(context, PlayerActivity::class.java))

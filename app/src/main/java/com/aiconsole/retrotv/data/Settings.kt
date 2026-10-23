@@ -2,6 +2,7 @@ package com.aiconsole.retrotv.data
 
 import android.content.Context
 import androidx.core.content.edit
+import com.aiconsole.retrotv.player.DevicePerf
 import com.aiconsole.retrotv.web.Gamepad
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -65,7 +66,11 @@ data class Prefs(
     val setupDone: Boolean = false,
     /** Text size: 0 Normal, 1 Large, 2 Extra large ([com.aiconsole.retrotv.ui.Readability]). */
     val textSize: Int = 0,
-    val boldFocus: Boolean = false
+    val boldFocus: Boolean = false,
+    /** Smooth mode for slow TV boxes: no filters or rewind, no speed HUD. On by default on low-end devices. */
+    val smoothMode: Boolean = false,
+    /** Compatibility graphics: the WebGL 1 cores (older GPUs). */
+    val compatGraphics: Boolean = false
 )
 
 /** Overrides one site (by host) can have; null means "use the global setting". */
@@ -80,6 +85,7 @@ data class SitePrefs(
 class Settings(context: Context) {
 
     private val prefs = context.applicationContext.getSharedPreferences("settings", Context.MODE_PRIVATE)
+    private val lowEnd = prefs.contains("smoothMode").not() && DevicePerf.detect(context.applicationContext)
     private val _state = MutableStateFlow(load())
     val state: StateFlow<Prefs> = _state.asStateFlow()
     val value: Prefs get() = _state.value
@@ -136,7 +142,10 @@ class Settings(context: Context) {
             // Settings saved before the setup existed mean this TV is already set up.
             setupDone = prefs.getBoolean("setupDone", prefs.contains("accent")),
             textSize = prefs.getInt("textSize", d.textSize).coerceIn(0, 2),
-            boldFocus = prefs.getBoolean("boldFocus", d.boldFocus)
+            boldFocus = prefs.getBoolean("boldFocus", d.boldFocus),
+            // First run on a slow device: Smooth mode starts on (until the owner chooses).
+            smoothMode = prefs.getBoolean("smoothMode", lowEnd),
+            compatGraphics = prefs.getBoolean("compatGraphics", d.compatGraphics)
         )
     }
 
@@ -176,6 +185,8 @@ class Settings(context: Context) {
         putBoolean("setupDone", p.setupDone)
         putInt("textSize", p.textSize)
         putBoolean("boldFocus", p.boldFocus)
+        putBoolean("smoothMode", p.smoothMode)
+        putBoolean("compatGraphics", p.compatGraphics)
         putInt("version", 2)
     }
 

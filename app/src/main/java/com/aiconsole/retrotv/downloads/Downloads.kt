@@ -92,7 +92,8 @@ class Downloads(private val context: Context) {
         val request = DownloadManager.Request(url.toUri()).apply {
             setTitle(name)
             setDescription("RetroTV")
-            setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+            // Only while downloading: a notification that stays after completion can be tapped to open the file in another app.
+            setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE)
             mime?.let { setMimeType(it) }
             userAgent?.let { addRequestHeader("User-Agent", it) }
             referer?.let { addRequestHeader("Referer", it) }
@@ -146,14 +147,24 @@ class Downloads(private val context: Context) {
 
     fun uriFor(item: DownloadItem): Uri? = runCatching { dm.getUriForDownloadedFile(item.id) }.getOrNull()
 
-    /** Opens a finished download: installs an APK, otherwise offers the apps that can open it. */
-    fun open(activity: Activity, item: DownloadItem) {
+    /**
+     * Opens a finished download ([OpenPolicy]): installs an APK, plays a game file in RetroTV's own player
+     * through [play] (never in another app such as RetroArch), otherwise offers the apps that can open it.
+     */
+    fun open(activity: Activity, item: DownloadItem, play: ((Uri, String) -> Unit)? = null) {
         val uri = dm.getUriForDownloadedFile(item.id) ?: return toast(activity, "File is missing")
-        if (item.isApk) installApk(activity, uri) else openWith(activity, uri, item.mimeType, item.title)
+        route(activity, uri, item.mimeType, item.title, play)
     }
 
-    fun openSaved(activity: Activity, file: SavedFile) {
-        if (UrlInput.isApk(file.name, file.mimeType)) installApk(activity, file.uri) else openWith(activity, file.uri, file.mimeType, file.name)
+    fun openSaved(activity: Activity, file: SavedFile, play: ((Uri, String) -> Unit)? = null) =
+        route(activity, file.uri, file.mimeType, file.name, play)
+
+    private fun route(activity: Activity, uri: Uri, mimeType: String?, name: String, play: ((Uri, String) -> Unit)?) {
+        when (OpenPolicy.decide(name, mimeType)) {
+            OpenAction.InstallApk -> installApk(activity, uri)
+            OpenAction.PlayInRetroTV -> play?.invoke(uri, name) ?: toast(activity, "Use Play in RetroTV to start $name")
+            OpenAction.OpenWith -> openWith(activity, uri, mimeType, name)
+        }
     }
 
     private fun openWith(activity: Activity, uri: Uri, mimeType: String?, title: String) {

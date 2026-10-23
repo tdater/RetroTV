@@ -47,6 +47,8 @@ sealed interface PlayerPanel {
     data object Cheats : PlayerPanel
     /** Optional player setup before a multiplayer game starts. */
     data object Coop : PlayerPanel
+    /** One-time offer when the game runs slower than the console: turn on Smooth mode. */
+    data object Choppy : PlayerPanel
     data class Failed(val message: String, val hint: String = "") : PlayerPanel
 }
 
@@ -76,6 +78,10 @@ class PlayerUiState {
     var autoResume by mutableStateOf(false)
     /** The console's [Systems] id (player count for the co-op screen). */
     var systemId by mutableStateOf<String?>(null)
+    /** Smooth mode (slow TV boxes), Compatibility graphics (WebGL 1 cores) and Frame sync for this game. */
+    var smooth by mutableStateOf(false)
+    var compat by mutableStateOf(false)
+    var vsync by mutableStateOf(true)
 }
 
 interface PlayerActions {
@@ -100,6 +106,11 @@ interface PlayerActions {
     fun useLayoutForConsole()
     fun resetConsoleLayout()
     fun toggleAutoResume()
+    fun toggleSmooth()
+    fun toggleVsync()
+    fun toggleCompat()
+    /** The choppy-game prompt: [turnOn] enables Smooth mode, otherwise just closes it. */
+    fun answerChoppy(turnOn: Boolean)
     fun finishCoop()
     fun showHelp()
     fun hideHelp()
@@ -130,6 +141,7 @@ fun PlayerOverlay(state: PlayerUiState, title: String, system: String, canPlayOn
             PlayerPanel.Menu -> MenuPanel(state, title, system, canPlayOnSite, actions)
             PlayerPanel.Players -> PlayersPanel(state, actions)
             PlayerPanel.Coop -> CoopPanel(state, actions)
+            PlayerPanel.Choppy -> ChoppyPanel(actions)
             PlayerPanel.Cheats -> CheatsPanel(state.cheats, actions::toggleCheat, actions::deleteCheat, actions::addCheats) { actions.openMenu() }
             is PlayerPanel.Failed -> FailedPanel(p.message, p.hint, canPlayOnSite, actions)
         }
@@ -154,8 +166,8 @@ private fun BoxScope.FetchBar(done: Long, total: Long) {
     ) {
         Text(ProgressText.format(done, total), color = Color.White, fontSize = 17.sp)
         val fraction = ProgressText.fraction(done, total)
+        // No endless animation while the game loads: an unknown size shows the text only.
         if (fraction != null) LinearProgressIndicator(progress = { fraction }, Modifier.fillMaxWidth())
-        else LinearProgressIndicator(Modifier.fillMaxWidth())
     }
 }
 
@@ -217,6 +229,11 @@ private fun MenuPanel(state: PlayerUiState, title: String, system: String, canPl
             MenuTile("⏯", if (state.autoResume) "Auto-resume: on" else "Auto-resume: off", actions::toggleAutoResume, Modifier.weight(1f), selected = state.autoResume)
             MenuTile("📌", "Use this layout for all $system games", actions::useLayoutForConsole, Modifier.weight(1f))
             MenuTile("♻", "Reset $system layout", actions::resetConsoleLayout, Modifier.weight(1f))
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            MenuTile("🐢", if (state.smooth) "Smooth mode: on" else "Smooth mode: off", actions::toggleSmooth, Modifier.weight(1f), selected = state.smooth)
+            MenuTile("⏱", if (state.vsync) "Frame sync: on" else "Frame sync: off", actions::toggleVsync, Modifier.weight(1f), selected = state.vsync)
+            MenuTile("🧱", if (state.compat) "Compatibility graphics: on (next start)" else "Compatibility graphics: off (next start)", actions::toggleCompat, Modifier.weight(1f), selected = state.compat)
         }
         Text(
             "Controller: Select + Start opens this menu · Select + L1 quick save, Select + R1 quick load (slot $slot), " +
@@ -287,6 +304,21 @@ private fun CoopPanel(state: PlayerUiState, actions: PlayerActions) {
         }
         TvButton("Start the game", actions::finishCoop, icon = "▶")
         Text("Back skips this. You can change players later in the game menu.", color = TextDim, fontSize = 13.sp)
+    }
+}
+
+/** "Choppy?": shown once per game when the game runs well below the console's speed. */
+@Composable
+private fun ChoppyPanel(actions: PlayerActions) {
+    val first = remember { FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { first.requestFocus() } }
+    OverlayPanel("Choppy? Turn on Smooth mode", Modifier.fillMaxSize(), widthFraction = 0.6f) {
+        Text("This game is running slower than it should on this TV. Smooth mode turns off filters, rewind and the speed readout to lighten the load.", color = Color.White, fontSize = 16.sp)
+        Text("You can change it any time in the game menu or Settings.", color = TextDim, fontSize = 14.sp)
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            TvButton("Turn on", { actions.answerChoppy(true) }, Modifier.focusRequester(first), icon = "🐢")
+            TvButton("Not now", { actions.answerChoppy(false) })
+        }
     }
 }
 

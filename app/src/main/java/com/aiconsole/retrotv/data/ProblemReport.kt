@@ -56,6 +56,21 @@ object ProblemReport {
         }
     }
 
+    private const val MAX_NOTES = 30
+
+    /** Keeps a one-line note (a game's performance, a blocked link scheme) for "Report a problem"; the newest [MAX_NOTES] stay. */
+    fun note(context: Context, line: String) {
+        try {
+            synchronized(this) {
+                val file = File(context.applicationContext.filesDir, "report-notes.txt")
+                val lines = (if (file.exists()) file.readLines() else emptyList()) + "${SimpleDateFormat("MM-dd HH:mm", Locale.US).format(Date())} ${line.replace('\n', ' ').take(300)}"
+                file.writeText(lines.takeLast(MAX_NOTES).joinToString("\n"))
+            }
+        } catch (_: Throwable) {
+            // Best effort only.
+        }
+    }
+
     private fun save(context: Context, text: String) {
         val dir = crashDir(context).apply { mkdirs() }
         File(dir, "crash-${System.currentTimeMillis()}.txt").writeText(text)
@@ -100,6 +115,10 @@ object ProblemReport {
                 appendLine("-- ${at?.let { stamp.format(Date(it)) } ?: f.name}")
                 appendLine(f.readText().take(8_000))
             }
+        }
+        section("Notes (game performance, blocked links)") {
+            val file = File(context.filesDir, "report-notes.txt")
+            appendLine(if (file.exists()) file.readText() else "None recorded.")
         }
         section("Storage") {
             fun size(dir: File) = dir.walkTopDown().filter { it.isFile }.sumOf { it.length() } / 1_048_576

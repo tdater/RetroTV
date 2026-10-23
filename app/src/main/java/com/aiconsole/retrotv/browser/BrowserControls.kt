@@ -2,6 +2,7 @@ package com.aiconsole.retrotv.browser
 
 import android.content.ActivityNotFoundException
 import android.content.Intent
+import android.net.Uri
 import android.speech.RecognizerIntent
 import androidx.lifecycle.lifecycleScope
 import com.aiconsole.retrotv.apps.SiteApps
@@ -13,9 +14,14 @@ import com.aiconsole.retrotv.data.ViewMode
 import com.aiconsole.retrotv.data.WindowMode
 import com.aiconsole.retrotv.downloads.DownloadItem
 import com.aiconsole.retrotv.downloads.SavedFile
+import com.aiconsole.retrotv.player.RomLauncher
+import com.aiconsole.retrotv.player.Systems
 import com.aiconsole.retrotv.ui.MainActivity
 import com.aiconsole.retrotv.web.Userscript
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 // The browser's toolbar and menu commands ([BrowserActions]).
 
@@ -288,9 +294,31 @@ internal fun BrowserActivity.browserControls(): BrowserActions = object : Browse
         }
     }
 
-    override fun installApk(item: DownloadItem) = app.downloads.open(this@browserControls, item)
+    override fun installApk(item: DownloadItem) = app.downloads.open(this@browserControls, item, ::playRom)
 
-    override fun openSaved(file: SavedFile) = app.downloads.openSaved(this@browserControls, file)
+    override fun openSaved(file: SavedFile) = app.downloads.openSaved(this@browserControls, file, ::playRom)
+
+    override fun playDownload(item: DownloadItem) {
+        val uri = app.downloads.uriFor(item) ?: return toast("File is missing")
+        playRom(uri, item.title)
+    }
+
+    override fun playRom(uri: Uri, name: String) {
+        toast("Loading $name…")
+        lifecycleScope.launch {
+            try {
+                val value = withContext(Dispatchers.IO) { RomLauncher.import(this@browserControls, uri, name) }
+                val system = Systems.forFile(name)
+                if (system != null) startRom(value, name, system.id) else show(Panel.PickSystem(value, name))
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                toast("Couldn't open that file: ${e.message}")
+            }
+        }
+    }
+
+    override fun startRom(value: String, name: String, core: String) = RomLauncher.start(this@browserControls, value, name, core)
 
     override fun updateSite(change: (SitePrefs) -> SitePrefs) {
         settings.updateSite(ui.host, change)

@@ -42,6 +42,8 @@ import com.aiconsole.retrotv.downloads.ApkSource
 import com.aiconsole.retrotv.downloads.DownloadItem
 import com.aiconsole.retrotv.downloads.EmulatorApp
 import com.aiconsole.retrotv.downloads.Emulators
+import com.aiconsole.retrotv.downloads.OpenAction
+import com.aiconsole.retrotv.downloads.OpenPolicy
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -138,7 +140,7 @@ private fun GameSources(onOpenUrl: (String) -> Unit) {
     LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item {
             Text(
-                "Open a source, then pick a file: downloads land in your Downloads folder and open in an emulator app. " +
+                "Open a source, then pick a file: downloads land in your Downloads folder; game files play in RetroTV. " +
                     "Any site works; add your own in Direct link or on the home screen.",
                 color = TextDim, fontSize = 14.sp
             )
@@ -181,7 +183,7 @@ private fun DownloadList() {
                 items(items, key = { it.id }) { d ->
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         TvClickable(
-                            onClick = { if (d.done) app.downloads.open(context as Activity, d) },
+                            onClick = { if (d.done) app.downloads.open(context as Activity, d, roms.play) },
                             modifier = Modifier.weight(1f),
                             focusedScale = 1.02f
                         ) {
@@ -193,7 +195,13 @@ private fun DownloadList() {
                                         color = if (d.failed) Color(0xFFFF6B6B) else TextDim, fontSize = 13.sp
                                     )
                                 }
-                                if (d.done) Pill(if (d.isApk) "Install" else "Open with…")
+                                if (d.done) Pill(
+                                    when (OpenPolicy.decide(d.title, d.mimeType)) {
+                                        OpenAction.InstallApk -> "Install"
+                                        OpenAction.PlayInRetroTV -> "Play in RetroTV"
+                                        OpenAction.OpenWith -> "Open with…"
+                                    }
+                                )
                             }
                         }
                         if (d.done && !d.isApk && Systems.isRom(d.title)) {
