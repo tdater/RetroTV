@@ -2,6 +2,7 @@ package com.aiconsole.retrotv.ui
 
 import android.view.KeyEvent
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -86,7 +87,25 @@ fun HomeScreen(onNavigate: (Screen) -> Unit, onOpen: (Site) -> Unit, onOpenUrl: 
     }
 
     val health by app.health.results.collectAsState()
-    LaunchedEffect(Unit) { runCatching { firstCard.requestFocus() } }
+    val heroFocus = remember { FocusRequester() }
+    var lastPick by rememberSaveable { mutableStateOf<String?>(null) }
+    val surprise: () -> Unit = {
+        // A random library game first (favourites twice as likely), else a random site.
+        val playable = games.filter { app.games.isAvailable(it.request.game) || it.request.page.startsWith("http") }
+        val game = RandomPick.choose(RandomPick.weighted(playable) { it.favorite }, lastPick, { it.request.key })
+        if (game != null) {
+            lastPick = game.request.key
+            playRecent(context, game)
+        } else {
+            val site = RandomPick.choose(visible, lastPick, { it.id })
+            if (site != null) {
+                lastPick = site.id
+                onOpen(site)
+            }
+        }
+    }
+    // The hero (when it is showing) takes the first focus so OK resumes the last game.
+    LaunchedEffect(Unit) { runCatching { if (filter == ALL) heroFocus.requestFocus() else firstCard.requestFocus() } }
     LaunchedEffect(Unit) { if (app.health.isDue()) runCatching { app.health.checkAll(all) } }
 
     Box(Modifier.fillMaxSize()) {
@@ -97,14 +116,34 @@ fun HomeScreen(onNavigate: (Screen) -> Unit, onOpen: (Site) -> Unit, onOpenUrl: 
             modifier = Modifier.fillMaxSize()
         ) {
             item(span = { GridItemSpan(maxLineSpan) }) {
-                Header(prefs.showClock, onNavigate, onGo = { dialog = "go" }, onPlayRom = roms.open)
+                Header(prefs.showClock, onNavigate, onGo = { dialog = "go" }, onPlayRom = roms.open, onSurprise = surprise)
             }
             if (note.isNotEmpty()) {
                 item(span = { GridItemSpan(maxLineSpan) }) { Text(note, color = MaterialTheme.colorScheme.primary, fontSize = 15.sp) }
             }
+            if (filter == ALL) {
+                item(span = { GridItemSpan(maxLineSpan) }) {
+                    ContinueHero(
+                        game = games.firstOrNull(),
+                        now = System.currentTimeMillis(),
+                        resumeFocus = heroFocus,
+                        onResume = { games.firstOrNull()?.let { playRecent(context, it) } },
+                        onSurprise = surprise,
+                        onPlayRom = roms.open
+                    )
+                }
+                if (games.isNotEmpty()) {
+                    item(span = { GridItemSpan(maxLineSpan) }) {
+                        StatsStrip(games.sumOf { it.playMs }, games.size, games.count { it.favorite })
+                    }
+                }
+            }
             item(span = { GridItemSpan(maxLineSpan) }) {
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    items(tags) { t -> TvButton(t, { filter = t }, selected = filter == t) }
+                Column {
+                    SectionTitle("Filter")
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        items(tags) { t -> TvButton(t, { filter = t }, selected = filter == t) }
+                    }
                 }
             }
             if (games.isNotEmpty() && filter == ALL) {
@@ -115,7 +154,7 @@ fun HomeScreen(onNavigate: (Screen) -> Unit, onOpen: (Site) -> Unit, onOpenUrl: 
             if (history.isNotEmpty() && filter == ALL) {
                 item(span = { GridItemSpan(maxLineSpan) }) {
                     Column {
-                        SectionTitle("Continue playing")
+                        SectionTitle("Recently visited")
                         LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             items(history.take(10), key = { it.url }) { h ->
                                 TvClickable(onClick = { onOpenUrl(h.url) }, modifier = Modifier.width(260.dp)) {
@@ -201,7 +240,7 @@ fun HomeScreen(onNavigate: (Screen) -> Unit, onOpen: (Site) -> Unit, onOpenUrl: 
 }
 
 @Composable
-private fun Header(showClock: Boolean, onNavigate: (Screen) -> Unit, onGo: () -> Unit, onPlayRom: () -> Unit) {
+private fun Header(showClock: Boolean, onNavigate: (Screen) -> Unit, onGo: () -> Unit, onPlayRom: () -> Unit, onSurprise: () -> Unit) {
     Column(Modifier.fillMaxWidth().padding(bottom = 6.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Column {
@@ -227,6 +266,7 @@ private fun Header(showClock: Boolean, onNavigate: (Screen) -> Unit, onGo: () ->
         LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             item { TvButton("Go to a site", onGo, icon = "🔍") }
             item { TvButton("My games", { onNavigate(Screen.Library) }, icon = "🕹") }
+            item { TvButton("Surprise me", onSurprise, icon = "🎲") }
             item { TvButton("Search all sites", { onNavigate(Screen.Search) }, icon = "🔎") }
             item { TvButton("Phone link", { onNavigate(Screen.Phone) }, icon = "📱") }
             item { TvButton("Play a ROM file", onPlayRom, icon = "🎮") }
@@ -256,7 +296,7 @@ private fun SiteCard(
         onClick = onClick,
         onLongClick = onMenu,
         modifier = modifier.aspectRatio(16f / 9f),
-        focusedScale = 1.08f,
+        focusedScale = HomeUiRules.focusScale(LocalBoldFocus.current),
         background = color.copy(alpha = 0.55f),
         focusedBackground = color.copy(alpha = 0.85f),
         onKey = { e ->
@@ -277,16 +317,18 @@ private fun SiteCard(
             fontSize = 64.sp,
             fontWeight = FontWeight.Black,
             color = Color.White.copy(alpha = 0.16f),
-            modifier = Modifier.align(Alignment.TopEnd).padding(end = 14.dp)
+            modifier = Modifier.align(Alignment.CenterEnd).padding(end = 14.dp)
         )
+        // A soft highlight on the focused card, on top of the zoom and border.
+        val glow by animateFloatAsState(if (focused) 0.14f else 0f, label = "cardGlow")
+        Box(Modifier.fillMaxSize().background(Color.White.copy(alpha = glow), RoundedCornerShape(14.dp)))
         Row(Modifier.align(Alignment.TopStart).padding(10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             if (favorite) Pill("★", Color(0xFFFFD23F))
             if (installed) Pill("App", Color(0xFF3DDC84))
             if (!site.builtIn) Pill("Mine", Color.White)
             if (player) Pill("Player ✓", Color(0xFF22D3EE))
-            if (health == Health.Slow) Pill("Slow", Color(0xFFFFB300))
-            if (health == Health.Down) Pill("Down?", Color(0xFFFF5252))
         }
+        Box(Modifier.align(Alignment.TopEnd).padding(10.dp)) { HealthChip(health) }
         Column(Modifier.padding(14.dp)) {
             Text(site.name, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
             if (lastGame != null) {
