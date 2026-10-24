@@ -29,3 +29,6 @@ local.properties
 /.idea/deploymentTargetSelector.xml
 /.idea/deviceManager.xml
 /.idea/emulatorDisplays.xml
+
+# Module build output
+build/
