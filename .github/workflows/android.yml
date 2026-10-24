@@ -10,6 +10,11 @@ on:
 permissions:
   contents: write
 
+# A newer push to the same branch or PR cancels the older run. Tag runs (releases) are never
+# cancelled, so a release in flight always finishes publishing.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 jobs:
   build:
     runs-on: ubuntu-latest
