@@ -49,6 +49,17 @@ class SearchAndBadgesTest {
     }
 
     @Test
+    fun builtInSitesHaveLaunchBoxMetadata() {
+        assertEquals(16, BuiltInSites.ALL.size)
+        BuiltInSites.ALL.forEach { s ->
+            assertTrue("Site ${s.id} should have systems", s.systems.isNotEmpty())
+            assertTrue("Site ${s.id} should have era", s.era.isNotBlank())
+            assertTrue("Site ${s.id} should have mascotKey", s.mascotKey.isNotBlank())
+            assertTrue("Site ${s.id} should have featured games", s.featuredGames.isNotEmpty())
+        }
+    }
+
+    @Test
     fun playerBadgeIgnoresWww() {
         assertTrue(SiteBadges.usesPlayer("www.x.com", setOf("x.com")))
         assertTrue(SiteBadges.usesPlayer("x.com", setOf("www.x.com")))

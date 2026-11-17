@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -321,13 +322,14 @@ private fun SiteCard(
     modifier: Modifier = Modifier
 ) {
     val color = Color(site.color)
+    val directCapable = player || site.directPlay
     TvClickable(
         onClick = onClick,
         onLongClick = onMenu,
         modifier = modifier.aspectRatio(16f / 9f),
         focusedScale = HomeUiRules.focusScale(LocalBoldFocus.current),
-        background = color.copy(alpha = 0.55f),
-        focusedBackground = color.copy(alpha = 0.85f),
+        background = Color(0xFF131322),
+        focusedBackground = Color(0xFF1B1B30),
         onKey = { e ->
             if (e.keyCode == KeyEvent.KEYCODE_MENU || e.keyCode == KeyEvent.KEYCODE_INFO) {
                 if (e.action == KeyEvent.ACTION_UP) onMenu()
@@ -336,37 +338,133 @@ private fun SiteCard(
         },
         contentAlignment = Alignment.BottomStart
     ) { focused ->
+        // Glassmorphic dark gradient backdrop with site accent
         Box(
             Modifier
                 .fillMaxSize()
-                .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.55f))), RoundedCornerShape(14.dp))
+                .background(
+                    Brush.verticalGradient(
+                        listOf(
+                            color.copy(alpha = if (focused) 0.65f else 0.40f),
+                            Color(0xFF0C0C16).copy(alpha = 0.94f)
+                        )
+                    ),
+                    RoundedCornerShape(14.dp)
+                )
         )
-        Text(
-            site.name.take(1).uppercase(),
-            fontSize = 64.sp,
-            fontWeight = FontWeight.Black,
-            color = Color.White.copy(alpha = 0.16f),
-            modifier = Modifier.align(Alignment.CenterEnd).padding(end = 14.dp)
+        // CRT Scanline texture overlay
+        RetroScanlines(alpha = if (focused) 0.05f else 0.08f)
+
+        // Top neon marquee glow line
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(3.dp)
+                .align(Alignment.TopCenter)
+                .background(
+                    if (focused) Brush.horizontalGradient(listOf(color, RetroArt.NeonCyan, color))
+                    else Brush.horizontalGradient(listOf(color.copy(alpha = 0.6f), Color.Transparent, color.copy(alpha = 0.6f)))
+                )
         )
-        // A soft highlight on the focused card, on top of the zoom and border.
-        val glow by animateFloatAsState(if (focused) 0.14f else 0f, label = "cardGlow")
-        Box(Modifier.fillMaxSize().background(Color.White.copy(alpha = glow), RoundedCornerShape(14.dp)))
-        Row(Modifier.align(Alignment.TopStart).padding(10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            if (favorite) Pill("★", Color(0xFFFFD23F))
-            if (installed) Pill("App", Color(0xFF3DDC84))
-            if (!site.builtIn) Pill("Mine", Color.White)
-            if (player) Pill("Player ✓", Color(0xFF22D3EE))
+
+        // Thematic retro mascot & hardware silhouette on right side
+        RetroMascotArt(
+            mascotKey = site.mascotKey.ifEmpty { "arcade" },
+            color = if (focused) Color.White.copy(alpha = 0.28f) else Color.White.copy(alpha = 0.14f),
+            modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .size(if (focused) 86.dp else 74.dp)
+                .padding(end = 12.dp)
+        )
+
+        // Soft focus glow overlay
+        val glow by animateFloatAsState(if (focused) 0.12f else 0f, label = "cardGlow")
+        if (glow > 0f) {
+            Box(Modifier.fillMaxSize().background(Color.White.copy(alpha = glow), RoundedCornerShape(14.dp)))
         }
-        Column(Modifier.align(Alignment.TopEnd).padding(10.dp), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            HealthChip(health)
-            if (compat != null) Pill(compat, Color(0xFF3DDC84))
+
+        // Top row: status badges & era tag
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .align(Alignment.TopStart)
+                .padding(horizontal = 10.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.Top
+        ) {
+            Row(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (favorite) Pill("★", Color(0xFFFFD23F))
+                if (installed) Pill("App", Color(0xFF3DDC84))
+                if (!site.builtIn) Pill("Mine", Color.White)
+                if (directCapable) {
+                    Pill(if (player) "Player ✓" else "⚡ Direct", RetroArt.NeonCyan)
+                }
+            }
+            Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    if (site.era.isNotEmpty()) {
+                        Box(
+                            Modifier
+                                .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(4.dp))
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text(site.era, fontSize = 9.sp, fontWeight = FontWeight.Bold, color = RetroArt.NeonPink)
+                        }
+                    }
+                    HealthChip(health)
+                }
+                if (compat != null) Pill(compat, Color(0xFF3DDC84))
+            }
         }
-        Column(Modifier.padding(14.dp)) {
-            Text(site.name, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+
+        // Bottom content: site title, console chips, and game info
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 10.dp)
+        ) {
+            Text(
+                site.name,
+                color = Color.White,
+                fontSize = 19.sp,
+                fontWeight = FontWeight.Black,
+                letterSpacing = 0.3.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            if (site.systems.isNotEmpty()) {
+                LaunchBoxConsoleChips(
+                    systems = site.systems,
+                    directPlay = false,
+                    modifier = Modifier.padding(top = 2.dp, bottom = 2.dp)
+                )
+            }
             if (lastGame != null) {
-                Text("Last played: $lastGame", color = Color.White.copy(alpha = 0.9f), fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(
+                    "▶ Last: $lastGame",
+                    color = RetroArt.NeonYellow,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            } else if (site.featuredGames.isNotEmpty()) {
+                Text(
+                    "★ " + site.featuredGames.take(3).joinToString(" · "),
+                    color = Color.White.copy(alpha = 0.75f),
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
             } else if (showDescription || focused) {
-                Text(site.description, color = Color.White.copy(alpha = 0.85f), fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(
+                    site.description,
+                    color = Color.White.copy(alpha = 0.8f),
+                    fontSize = 12.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
         }
     }
