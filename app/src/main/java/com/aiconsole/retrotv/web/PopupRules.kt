@@ -6,6 +6,7 @@ import com.aiconsole.retrotv.data.UrlInput
 object PopupRules {
 
     private val GAME_PATHS = listOf("/game", "/play", "/emulator")
+    private val HOST_CHARS = Regex("[a-z0-9.-]+")
 
     /**
      * True for a game launch: the host is exactly a trusted host or a dot-anchored subdomain of one,
@@ -13,8 +14,12 @@ object PopupRules {
      * query names a ROM. [trusted] holds bare hosts (built-in sites, the ad blocker's game-host allow-list).
      */
     fun isGameLaunch(url: String, trusted: (String) -> Boolean): Boolean {
+        // Browsers treat '\' like '/' and '@' as userinfo, so such an authority can name another host
+        // than a plain parse does; refuse it outright, and only accept plain host characters.
+        val authority = url.substringAfter("://", "").substringBefore('/').substringBefore('?').substringBefore('#')
+        if (authority.isEmpty() || '\\' in authority || '@' in authority) return false
         val host = UrlInput.host(url) ?: return false
-        if (!trusted(host)) return false
+        if (!HOST_CHARS.matches(host) || !trusted(host)) return false
         val rest = url.substringAfter("://").substringAfter('/', "")
         val path = "/" + rest.substringBefore('#').substringBefore('?').lowercase()
         val query = rest.substringBefore('#').substringAfter('?', "").lowercase()

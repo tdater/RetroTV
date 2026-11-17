@@ -27,6 +27,13 @@ class PopupRulesTest {
         assertFalse(launch("https://retrogames.cc.evil.com/play"))
     }
 
+    @Test fun authorityTricksAreRefused() {
+        assertFalse(launch("https://x@evil.com\\.retrogames.cc/play"))
+        assertFalse(launch("https://evil.com\\@retrogames.cc/play"))
+        assertFalse(launch("https://user@retrogames.cc/play"))
+        assertFalse(launch("https://retrogames.cc\\.evil.com/play"))
+    }
+
     @Test fun trustedHostOtherPathIsNotALaunch() {
         assertFalse(launch("https://retrogames.cc/promo"))
     }

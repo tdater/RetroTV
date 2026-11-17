@@ -222,9 +222,8 @@ internal fun BrowserActivity.handlePopup(url: String) {
     }
     if (adBlockActive && settings.value.blockPopups && !UrlInput.sameSite(webView?.url, url)) {
         val siteHosts = BuiltInSites.ALL.map { it.host }
-        val isGameLaunch = PopupRules.isGameLaunch(url) { h ->
-            PopupRules.hostIn(h, siteHosts) || AdBlock.isAllowed(h)
-        }
+        // Built-in game sites only: the ad blocker's allow-list holds shared CDNs and hosting.
+        val isGameLaunch = PopupRules.isGameLaunch(url) { h -> PopupRules.hostIn(h, siteHosts) }
         if (!isGameLaunch) {
             ui.blockedPopup = url
             toast("Blocked a pop-up · Menu ▸ Open blocked pop-up")
