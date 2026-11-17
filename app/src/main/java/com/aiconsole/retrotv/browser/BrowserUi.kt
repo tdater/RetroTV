@@ -93,6 +93,8 @@ class BrowserUiState {
     var gamePlayer by mutableStateOf(true)
     var blockedCount by mutableIntStateOf(0)
     var blockedFrames by mutableIntStateOf(0)
+    /** Refresh rate in use (0 = unknown); in-page emulators run one frame per refresh. */
+    var displayHz by mutableStateOf(0f)
     /** Fix-this-page steps already tried, by host (this visit). */
     var fixTried by mutableStateOf<Map<String, Set<FixLadder.Step>>>(emptyMap())
     /** Each site's state before its first fix: the ladder judges its steps against this. */
@@ -319,6 +321,14 @@ private fun MenuPanel(state: BrowserUiState, actions: BrowserActions) {
         TvButton("Clear compatibility notes for this site", { actions.clearCompat() }, Modifier.fillMaxWidth(), icon = "🧹")
         if (state.blockedFrames > 0) {
             Text("Blocked ${state.blockedFrames} ad frame${if (state.blockedFrames == 1) "" else "s"} on this page", color = TextDim, fontSize = 13.sp)
+        }
+        if (state.displayHz > 0f) {
+            val sixty = com.aiconsole.retrotv.player.DisplayRules.isSixty(state.displayHz)
+            Text(
+                "Screen refresh %.0f Hz".format(java.util.Locale.US, state.displayHz) +
+                    if (sixty) "" else " · games run best at 60 Hz: pick 60 Hz in your TV's display settings",
+                color = TextDim, fontSize = 13.sp
+            )
         }
         Text(
             "Hold OK or press Menu for this panel · Back closes it · Select + Start opens it from a controller",

@@ -6,12 +6,41 @@
  * the site it hands the game to the app (RetroTVGame.launch) and stops the site's copy of the
  * emulator: the loader's read of EJS_gameUrl throws, so it never starts (and never downloads a
  * core or waits for an ad). The site's page is left as it was, so Back returns to it.
+ *
+ * Also provides an AudioContext auto-unlock and canvas focus helper for in-browser fallback emulators.
  */
 (function () {
   if (window.__retrotvGameHook) return;
   window.__retrotvGameHook = true;
   var B = window.RetroTVGame;
   if (!B || location.hostname === 'appassets.androidplatform.net') return;
+
+  // Auto-unlock Web Audio contexts when suspended (fixes sites whose in-browser emulators stall)
+  try {
+    var AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (AudioCtx) {
+      var unlock = function () {
+        try {
+          var list = window.__retrotvAudioContexts || [];
+          for (var i = 0; i < list.length; i++) {
+            if (list[i].state === 'suspended') list[i].resume();
+          }
+        } catch (x) {}
+      };
+      ['keydown', 'keyup', 'pointerdown', 'mousedown', 'touchstart'].forEach(function (evt) {
+        window.addEventListener(evt, unlock, { capture: true, passive: true });
+      });
+      // A subclass keeps the constructor options (sampleRate, latencyHint) and static members intact.
+      var Wrapped = class extends AudioCtx {
+        constructor(opts) {
+          super(opts);
+          window.__retrotvAudioContexts = window.__retrotvAudioContexts || [];
+          window.__retrotvAudioContexts.push(this);
+        }
+      };
+      window.AudioContext = window.webkitAudioContext = Wrapped;
+    }
+  } catch (e) {}
 
   var KEYS = ['core', 'gameUrl', 'biosUrl', 'gameParentUrl', 'gamePatchUrl', 'gameName', 'gameTitle', 'loadStateURL'];
   var values = {};
@@ -58,7 +87,24 @@
           }
           return values[k];
         },
-        set: function (v) { values[k] = v; }
+        set: function (v) {
+          values[k] = v;
+          if (!taken && !passive && (k === 'gameUrl' || k === 'core') && values.core && values.gameUrl) {
+            if (hasLoader()) trigger('set');
+          }
+        }
+      });
+    } catch (e) {}
+  });
+
+  // Support common aliases for sites that use EJS_game or EJS_game_url
+  ['game', 'game_url'].forEach(function (alias) {
+    try {
+      Object.defineProperty(window, 'EJS_' + alias, {
+        configurable: true,
+        enumerable: true,
+        get: function () { return values.gameUrl; },
+        set: function (v) { window.EJS_gameUrl = v; }
       });
     } catch (e) {}
   });

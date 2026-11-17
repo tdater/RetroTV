@@ -188,6 +188,8 @@ class BrowserActivity : ComponentActivity(), BrowserActions {
         if (prefs.keepScreenOn) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         WindowCompat.setDecorFitsSystemWindows(window, false)
         hideSystemBars()
+        // In-page emulators run one game frame per screen refresh: a 24/30/50 Hz TV mode makes video and sound choppy.
+        ui.displayHz = runCatching { com.aiconsole.retrotv.player.DisplayModes.preferSixtyHz(this) }.getOrDefault(0f)
 
         root = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
         webFrame = FrameLayout(this)

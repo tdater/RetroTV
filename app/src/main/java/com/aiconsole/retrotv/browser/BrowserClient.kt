@@ -16,10 +16,12 @@ import android.webkit.WebViewClient
 import android.widget.FrameLayout
 import androidx.core.graphics.createBitmap
 import androidx.lifecycle.lifecycleScope
+import com.aiconsole.retrotv.data.BuiltInSites
 import com.aiconsole.retrotv.data.FreezeWatchdog
 import com.aiconsole.retrotv.data.ProblemReport
 import com.aiconsole.retrotv.data.UrlInput
 import com.aiconsole.retrotv.web.AdBlock
+import com.aiconsole.retrotv.web.PopupRules
 import com.aiconsole.retrotv.web.SiteHints
 import com.aiconsole.retrotv.web.Surrogates
 import kotlinx.coroutines.CancellationException
@@ -219,9 +221,15 @@ internal fun BrowserActivity.handlePopup(url: String) {
         return
     }
     if (adBlockActive && settings.value.blockPopups && !UrlInput.sameSite(webView?.url, url)) {
-        ui.blockedPopup = url
-        toast("Blocked a pop-up · Menu ▸ Open blocked pop-up")
-        return
+        val siteHosts = BuiltInSites.ALL.map { it.host }
+        val isGameLaunch = PopupRules.isGameLaunch(url) { h ->
+            PopupRules.hostIn(h, siteHosts) || AdBlock.isAllowed(h)
+        }
+        if (!isGameLaunch) {
+            ui.blockedPopup = url
+            toast("Blocked a pop-up · Menu ▸ Open blocked pop-up")
+            return
+        }
     }
     webView?.loadUrl(url)
 }
