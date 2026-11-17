@@ -51,7 +51,11 @@ object AdBlock {
         "js-dos.com", "dos.zone", "jsdelivr.net", "unpkg.com", "cdnjs.cloudflare.com", "gstatic.com",
         "googleapis.com", "github.io", "githubusercontent.com", "webrcade.com", "greasyfork.org",
         // ROM and asset hosts of the supported game sites (checked before the block list)
-        "filesus3.retrogames.cc", "roms.emulatorgamer.com", "r2.oldgames.app", "mem.neptunjs.com"
+        "filesus3.retrogames.cc", "filesus1.retrogames.cc", "filesus2.retrogames.cc", "filesus4.retrogames.cc",
+        "files.retrogames.cc", "static.retrogames.cc", "roms.emulatorgamer.com", "r2.oldgames.app",
+        "mem.neptunjs.com", "neptunjs.com", "cdn.playclassic.games", "cloud.playclassic.games",
+        "r2.playclassic.games", "cdn.classicreload.com", "static.classicreload.com",
+        "cdn.retrogamesnexus.com", "80sarcade.net", "roms.gam.onl", "cdn.rec0ded88.com"
     )
 
     @Volatile

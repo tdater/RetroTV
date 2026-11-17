@@ -18,6 +18,7 @@ object Surrogates {
             h.endsWith("google-analytics.com") && (p.endsWith("/analytics.js") || p.endsWith("/ga.js")) -> ANALYTICS
             (h.endsWith("googletagservices.com") || h.endsWith("doubleclick.net")) && p.contains("gpt") -> GPT
             h.endsWith("adinplay.com") -> AIPTAG
+            (h.contains("cookielaw") || h.contains("fundingchoices") || p.contains("cmp") || p.contains("tcf")) -> CMP
             else -> null
         }
     }
@@ -147,5 +148,17 @@ object Surrogates {
   run(t.cmd.player);
   run(t.cmd.display);
   run(t.cmd);
+})();"""
+
+    /** CMP / Cookie consent stand-in so pages waiting on GDPR / CMP callbacks carry on. */
+    private const val CMP = """(function () {
+  window.__tcfapi = window.__tcfapi || function (cmd, ver, cb) {
+    if (typeof cb === 'function') setTimeout(function () {
+      cb({ gdprApplies: false, eventStatus: 'tcloaded', cmpStatus: 'loaded' }, true);
+    }, 0);
+  };
+  window.__cmp = window.__cmp || function (cmd, arg, cb) {
+    if (typeof cb === 'function') setTimeout(function () { cb({ result: true }, true); }, 0);
+  };
 })();"""
 }
