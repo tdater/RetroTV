@@ -28,8 +28,13 @@ object UrlInput {
 
     /** Host of an http(s) URL, lower-case, without `www.`; null for anything else. */
     fun host(url: String?): String? {
-        val m = Regex("^https?://([^/?#:]+)", RegexOption.IGNORE_CASE).find(url ?: return null) ?: return null
-        return m.groupValues[1].lowercase().removePrefix("www.").trimEnd('.')
+        val m = Regex("^https?://([^/?#]*)", RegexOption.IGNORE_CASE).find(url ?: return null) ?: return null
+        val authority = m.groupValues[1]
+        // Browsers read '\' as '/' and '@' as userinfo, so such an authority names a different host than a plain
+        // split would; treat it as "no host" instead of guessing.
+        if ('\\' in authority || '@' in authority) return null
+        val host = authority.substringBefore(':').lowercase().removePrefix("www.").trimEnd('.')
+        return host.ifEmpty { null }
     }
 
     /** True when both URLs are on the same site (one host is the other or a subdomain of it). */

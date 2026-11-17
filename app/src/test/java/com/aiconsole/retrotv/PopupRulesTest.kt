@@ -1,6 +1,9 @@
 package com.aiconsole.retrotv
 
+import com.aiconsole.retrotv.data.UrlInput
 import com.aiconsole.retrotv.web.PopupRules
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -36,5 +39,11 @@ class PopupRulesTest {
 
     @Test fun trustedHostOtherPathIsNotALaunch() {
         assertFalse(launch("https://retrogames.cc/promo"))
+    }
+
+    @Test fun hostRejectsBackslashAndUserinfo() {
+        assertNull(UrlInput.host("https://x@evil.com\\.retrogames.cc/p"))
+        assertNull(UrlInput.host("https://user@retrogames.cc/"))
+        assertEquals("retrogames.cc", UrlInput.host("https://www.retrogames.cc:8080/a"))
     }
 }
