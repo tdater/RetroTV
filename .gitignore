@@ -29,3 +29,4 @@ local.properties
 /.idea/deploymentTargetSelector.xml
 /.idea/deviceManager.xml
 /.idea/emulatorDisplays.xml
+/app/build
