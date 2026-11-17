@@ -190,6 +190,11 @@ class BrowserActivity : ComponentActivity(), BrowserActions {
         hideSystemBars()
         // In-page emulators run one game frame per screen refresh: a 24/30/50 Hz TV mode makes video and sound choppy.
         ui.displayHz = runCatching { com.aiconsole.retrotv.player.DisplayModes.preferSixtyHz(this) }.getOrDefault(0f)
+        if (ui.displayHz > 0f && !com.aiconsole.retrotv.player.DisplayRules.isSixty(ui.displayHz) && !lowHzHintShown) {
+            lowHzHintShown = true
+            val hz = ui.displayHz
+            handler.postDelayed({ toast("TV is at %.0f Hz · games run best at 60 Hz (TV display settings)".format(java.util.Locale.US, hz)) }, 2500)
+        }
 
         root = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
         webFrame = FrameLayout(this)
@@ -572,6 +577,8 @@ class BrowserActivity : ComponentActivity(), BrowserActions {
     }
 
     companion object {
+        /** The low-refresh-rate hint is shown once per app run, not on every page. */
+        @Volatile private var lowHzHintShown = false
         const val EXTRA_SITE_ID = "site_id"
         const val EXTRA_TITLE = "title"
         const val EXTRA_STANDALONE = "standalone"
