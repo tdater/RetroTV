@@ -215,6 +215,12 @@ internal fun BrowserActivity.handlePopup(url: String) {
         handleExternalScheme(url)
         return
     }
+    if (adBlockActive && scheme != "about" && UrlInput.host(url) == null) {
+        // No trustworthy host (backslash/userinfo tricks, empty authority): hold it rather than judge it.
+        ui.blockedPopup = url
+        toast("Blocked a pop-up · Menu ▸ Open blocked pop-up")
+        return
+    }
     if (adBlockActive && AdBlock.isBlocked(UrlInput.host(url))) {
         countBlocked()
         toast("Blocked a pop-up ad")
