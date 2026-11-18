@@ -8,6 +8,9 @@ package com.aiconsole.retrotv.web
  */
 object Surrogates {
 
+    /** "cmp" or "tcf" as a whole path word (`/cmp/x.js`, `tcf-v2.js`), not inside other words. */
+    private val CMP_PATH = Regex("(^|[/._-])(cmp|tcf)([0-9]*)($|[/._-])")
+
     /** The stand-in for a blocked script request, or null to answer with an empty script. */
     fun find(host: String, path: String): String? {
         val h = host.lowercase()
@@ -18,7 +21,7 @@ object Surrogates {
             h.endsWith("google-analytics.com") && (p.endsWith("/analytics.js") || p.endsWith("/ga.js")) -> ANALYTICS
             (h.endsWith("googletagservices.com") || h.endsWith("doubleclick.net")) && p.contains("gpt") -> GPT
             h.endsWith("adinplay.com") -> AIPTAG
-            (h.contains("cookielaw") || h.contains("fundingchoices") || p.contains("cmp") || p.contains("tcf")) -> CMP
+            (h.contains("cookielaw") || h.contains("fundingchoices") || CMP_PATH.containsMatchIn(p)) -> CMP
             else -> null
         }
     }
